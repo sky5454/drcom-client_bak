@@ -25,23 +25,75 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <pthread.h>
+
 #include "md5.h"
 
+#include "drcomd.h"
+#include "daemon_server.h"
 #include "log.h"
 
-#include "private.h"
+static uint16_t _prepare_folded(struct drcom_info *info, struct drcom_host_msg *keepalive_skel)
+{
+	unsigned char buf[16 + 16], digest[16];
+	int password_len, i;
+	uint16_t folded;
 
-uint16_t _prepare_folded(struct drcom_info *info, struct drcom_host_msg *keepalive_skel);
+	password_len = strlen(info->password);
 
-int _respond(struct drcom_socks *socks, uint16_t folded, struct drcom_host_msg *keepalive_skel, uint8_t *question);
+	memcpy(digest, keepalive_skel->msg, 16);
 
-/* drcom_watchport
-	Handles incoming packets and takes neccessary action.
-	Runs until killed.
-	Returns -1 on error, should never return otherwise.
-*/
+	memcpy(buf, digest, 16);
+	strncpy((char *) (buf + 16), info->password, 16);
 
-int drcom_watchport(struct drcom_handle *h)
+	MD5(buf, 16 + password_len, digest);
+
+	folded = 0;
+	for (i = 0; i < 16; i += 2)
+		folded += *((uint16_t *) (digest + i));
+
+	return folded;
+}
+
+static int _respond(struct drcom_socks *socks, uint16_t folded, 
+		struct drcom_host_msg *keepalive_skel, uint8_t *question)
+{
+	struct drcom_host_msg *answer = malloc(sizeof(*answer));
+	struct sockaddr_in servaddr_in;
+	unsigned char digest[16];
+	uint16_t x;
+	int r;
+
+	memcpy(answer, keepalive_skel, sizeof(*answer));
+	memcpy(&servaddr_in, &socks->servaddr_in, sizeof(servaddr_in));
+
+	x = folded ^ *((uint16_t *) question);
+
+	answer->msg[0] = (x & 0x00ff) + ((x & 0xff00) >> 1);
+
+	answer->msg[1] = 0x01;
+
+	answer->msg[2] = 0x14;
+	answer->msg[3] = 0x00;
+	answer->msg[4] = 0x07;
+	answer->msg[5] = 0x0b;
+	answer->msg[6] = question[0];
+	answer->msg[7] = question[1];
+	MD5((unsigned char *) answer, 1 + 1 + 1 + 4 + 2, digest);
+	memcpy(answer->msg + 2, digest, 16);
+
+	answer->msg[18] = 0xff;
+
+	r = sendto(socks->sockfd, answer, sizeof(*answer), 0,
+			 (struct sockaddr *) &servaddr_in,
+			 sizeof(struct sockaddr));
+	if (r != sizeof(*answer))
+		return -1; /* error */
+
+	return 0;
+}
+
+static int drcom_watchport(struct drcom_handle *h)
 {
 	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
 	struct drcom_info *info = (struct drcom_info *) h->info;
@@ -85,7 +137,7 @@ int drcom_watchport(struct drcom_handle *h)
 		switch (serv_msg->mt)
 		{
 			case '8': 
-				if (h->msgprint) h->msgprint((char *) serv_msg->msg); 
+				loginfo((char *) serv_msg->msg); 
 				break;
 			case '&': 
 				r = _respond(socks, folded, keepalive_skel, serv_msg->msg);
@@ -104,63 +156,13 @@ err:
 	return -1;
 }
 
-uint16_t _prepare_folded(struct drcom_info *info, struct drcom_host_msg *keepalive_skel)
+void *daemon_watchport(void *arg)
 {
-	unsigned char buf[16 + 16], digest[16];
-	int password_len, i;
-	uint16_t folded;
-
-	password_len = strlen(info->password);
-
-	memcpy(digest, keepalive_skel->msg, 16);
-
-	memcpy(buf, digest, 16);
-	strncpy((char *) (buf + 16), info->password, 16);
-
-	MD5(buf, 16 + password_len, digest);
-
-	folded = 0;
-	for (i = 0; i < 16; i += 2)
-		folded += *((uint16_t *) (digest + i));
-
-	return folded;
-}
-
-int _respond(struct drcom_socks *socks, uint16_t folded, 
-		struct drcom_host_msg *keepalive_skel, uint8_t *question)
-{
-	struct drcom_host_msg *answer = malloc(sizeof(*answer));
-	struct sockaddr_in servaddr_in;
-	unsigned char digest[16];
-	uint16_t x;
-	int r;
-
-	memcpy(answer, keepalive_skel, sizeof(*answer));
-	memcpy(&servaddr_in, &socks->servaddr_in, sizeof(servaddr_in));
-
-	x = folded ^ *((uint16_t *) question);
-
-	answer->msg[0] = (x & 0x00ff) + ((x & 0xff00) >> 1);
-
-	answer->msg[1] = 0x01;
-
-	answer->msg[2] = 0x14;
-	answer->msg[3] = 0x00;
-	answer->msg[4] = 0x07;
-	answer->msg[5] = 0x0b;
-	answer->msg[6] = question[0];
-	answer->msg[7] = question[1];
-	MD5((unsigned char *) answer, 1 + 1 + 1 + 4 + 2, digest);
-	memcpy(answer->msg + 2, digest, 16);
-
-	answer->msg[18] = 0xff;
-
-	r = sendto(socks->sockfd, answer, sizeof(*answer), 0,
-			 (struct sockaddr *) &servaddr_in,
-			 sizeof(struct sockaddr));
-	if (r != sizeof(*answer))
-		return -1; /* error */
-
-	return 0;
+	block_sigusr1();
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	drcom_watchport((struct drcom_handle *) arg);
+	loginfo("watchport returns\n");
+	return NULL;
 }
 

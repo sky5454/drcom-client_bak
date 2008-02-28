@@ -23,17 +23,13 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <pthread.h>
 
+#include "drcomd.h"
+#include "daemon_server.h"
 #include "log.h"
 
-#include "private.h"
-
-/* drcom_keepalive
-	Sends a keepalive packet every 10 seconds until killed.
-	Returns -1 on error, should never return otherwise.
-*/
-
-int drcom_keepalive(struct drcom_handle *h)
+static int drcom_keepalive(struct drcom_handle *h)
 {
 	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
 	struct drcom_host_msg *host_msg = (struct drcom_host_msg *) h->keepalive;
@@ -56,5 +52,15 @@ int drcom_keepalive(struct drcom_handle *h)
 err:
 	logerr("keepalive: %s", strerror(errno));
 	return -1;
+}
+
+void *daemon_keepalive(void *arg)
+{
+	block_sigusr1();
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	drcom_keepalive((struct drcom_handle *) arg);
+	loginfo("keepalive returns\n");
+	return NULL;
 }
 

@@ -18,8 +18,7 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 
-#include "../include/config.h"
-#include "../include/drcom_types.h"
+#include "../include/daemon_kernel.h"
 
 extern struct drcom_status_data *status_data;
 extern struct drcom_auth_data *auth_data;

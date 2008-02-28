@@ -18,41 +18,20 @@
 */
 
 #include <string.h>
+#include <errno.h>
 
 #include "md5.h"
 
-#include "private.h"
+#include "drcomd.h"
+#include "daemon_server.h"
+#include "client_daemon.h"
 
-void _build_passwd_packet(struct drcom_passwd_packet *, struct drcom_info *, struct drcom_challenge *, char *);
+#include "log.h"
 
-/* drcom_passwd
-	Changes password.
-*/
-
-int drcom_passwd(struct drcom_handle *h, char *newpassword, int timeout)
-{
-	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
-	struct drcom_info *info = (struct drcom_info *) h->info;
-	struct drcom_challenge challenge;
-	struct drcom_passwd_packet passwd_packet;
-	struct drcom_acknowledgement acknowledgement;
-
-	_send_dialog_packet(socks, NULL, PKT_REQUEST);
-
-	_recv_dialog_packet(socks, &challenge, PKT_CHALLENGE);
-
-	_build_passwd_packet(&passwd_packet, info, &challenge, newpassword);
-	_send_dialog_packet(socks, &passwd_packet, PKT_PASSWORD_CHANGE);
-
-	_recv_dialog_packet(socks, &acknowledgement, PKT_ACK_SUCCESS);
-
-	if (acknowledgement.serv_header.pkt_type == PKT_ACK_SUCCESS)
-		return 0;
-	else
-		return -1;
-}
-
-void _build_passwd_packet(struct drcom_passwd_packet *passwd_packet, struct drcom_info *info, struct drcom_challenge *challenge, char *newpassword)
+static void _build_passwd_packet(struct drcom_passwd_packet *passwd_packet, 
+				struct drcom_info *info, 
+				struct drcom_challenge *challenge, 
+				char *newpassword)
 {
 	unsigned char s[32], t[22], d[16];
 	int i, l;
@@ -90,4 +69,89 @@ void _build_passwd_packet(struct drcom_passwd_packet *passwd_packet, struct drco
 
 	return;
 }
+
+static int drcom_passwd(int s2, struct drcom_handle *h, char *newpassword, int timeout)
+{
+	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
+	struct drcom_info *info = (struct drcom_info *) h->info;
+	struct drcom_challenge challenge;
+	struct drcom_passwd_packet passwd_packet;
+	struct drcom_acknowledgement acknowledgement;
+	int retry=0;
+
+	(void)timeout;
+
+try_it_again_1:
+	retry++;
+	if(retry>3)
+		return -1;
+
+	if(_send_dialog_packet(socks, NULL, PKT_REQUEST)<0){
+		report_daemon_msg(s2, "send(PKT_REQUEST) failed\n");
+		return -1;
+	}
+/*	report_daemon_msg(s2, "  PKT_REQUEST --->\n");*/
+
+	if(_recv_dialog_packet(socks, &challenge, PKT_CHALLENGE)<0){
+		report_daemon_msg(s2, "recv(PKT_CHALLENGE) failed\n");
+		goto try_it_again_1;
+	}
+/*	report_daemon_msg(s2, "  <--- PKT_CHALLENGE\n");*/
+
+	_build_passwd_packet(&passwd_packet, info, &challenge, newpassword);
+
+	retry=0;
+try_it_again_2:
+	retry++;
+	if(retry>3)
+		return -1;
+	if(_send_dialog_packet(socks, &passwd_packet, PKT_PASSWORD_CHANGE)<0){
+		report_daemon_msg(s2, "send(PKT_PASSWORD_CHANGE) failed\n");
+		return -1;
+	}
+/*	report_daemon_msg(s2, "  PKT_PASSWORD_CHANGE --->\n");*/
+
+	if(_recv_dialog_packet(socks, &acknowledgement, PKT_ACK_SUCCESS)<0){
+		report_daemon_msg(s2, "recv(PKT_ACK_SUCCESS) failed\n");
+		goto try_it_again_2;
+	}
+
+	if (acknowledgement.serv_header.pkt_type == PKT_ACK_SUCCESS){
+/*		report_daemon_msg(s2, "  <--- PKT_ACK_SUCCESS\n");*/
+		report_daemon_msg(s2, "Change passwd succeeded\n");
+		return 0;
+	} else {
+		report_daemon_msg(s2, "Server acknowledged failure\n");
+		return -1;
+	}
+}
+
+void do_command_passwd(int s2, struct drcom_handle *h)
+{
+	struct drcomcd_passwd cd_passwd;
+	int r;
+
+	r = safe_recv(s2, &cd_passwd, sizeof(struct drcomcd_passwd));
+	if (r != sizeof(struct drcomcd_passwd)) {
+		logerr("daemon: recv: %s", strerror(errno));
+		return;
+	}
+
+	if(status != STATUS_IDLE){
+		report_daemon_msg(s2, "BUSY, please logout first to change passwd\n");
+		report_final_result(s2, h, DRCOMCD_FAILURE);
+		return;
+	}
+
+	status = STATUS_BUSY;
+	r = drcom_passwd(s2, h, cd_passwd.newpasswd, cd_passwd.timeout);
+	if(r != 0){
+		report_daemon_msg(s2, "Change passwd failed\n");
+		report_final_result(s2, h, DRCOMCD_FAILURE);
+		return;
+	}
+
+	report_final_result(s2, h, DRCOMCD_SUCCESS);
+}
+
 

@@ -1,6 +1,6 @@
 #include "drcom_linux.h"
 
-#include "../include/config.h"
+//#include "../include/config.h"
 
 extern int drcom_init_proc(void);
 extern void drcom_cleanup_proc(void);

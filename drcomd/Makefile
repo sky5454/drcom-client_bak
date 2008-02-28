@@ -10,9 +10,9 @@ CFLAGS = $(WARN) $(INCLUDE) $(OPTIMIZE)
 LDFLAGS = -lm -lpthread
 
 BINS = drcomd
-OBJS = drcomd.o daemon.o cleanup.o dialog.o handle.o init.o keepalive.o login.o logout.o md5.o misc.o passwd.o readconf.o watchport.o getaddr.o log.o
-SRCS = drcomd.c daemon.c cleanup.c dialog.c handle.c init.c keepalive.c login.c logout.c md5.c misc.c passwd.c readconf.c watchport.c getaddr.c log.c
-INCS = daemon.h log.h
+OBJS = drcomd.o kmodule.o signal.o dialog.o keepalive.o login.o logout.o md5.o misc.o passwd.o readconf.o watchport.o log.o ../utils/utils.o
+SRCS = drcomd.c kmodule.c signal.c dialog.c keepalive.c login.c logout.c md5.c misc.c passwd.c readconf.c watchport.c log.c ../utils/utils.c
+INCS = log.h
 
 .PHONY: all clean install
 
@@ -27,6 +27,5 @@ install: $(BINS)
 
 drcomd: $(OBJS)
 
-drcomd.o: $(TOPSRCDIR)/include/config.h daemon.h log.h
-daemon.o: $(TOPSRCDIR)/include/config.h $(TOPSRCDIR)/include/client_daemon.h $(TOPSRCDIR)/include/drcom_types.h daemon.h log.h
+drcomd.o: log.h
 

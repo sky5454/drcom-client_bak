@@ -19,60 +19,17 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <pthread.h>
 
 #include "md5.h"
 
+#include "drcomd.h"
+#include "daemon_server.h"
+#include "client_daemon.h"
 #include "log.h"
-#include "private.h"
 
-void _build_logout_packet(struct drcom_logout_packet *, struct drcom_info *, struct drcom_challenge *, struct drcom_auth *);
-
-/* drcom_logout
-	Logs out.
-*/
-
-int drcom_logout(struct drcom_handle *h, int timeout)
-{
-	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
-	struct drcom_info *info = (struct drcom_info *) h->info;
-	struct drcom_auth *auth = (struct drcom_auth *) h->auth;
-	struct drcom_challenge challenge;
-	struct drcom_logout_packet logout_packet;
-	struct drcom_acknowledgement acknowledgement;
-	int retry = 0;
-
-try_it_again_1:
-	retry++;
-	if(retry > 3)
-		return -1;
-	_send_dialog_packet(socks, NULL, PKT_REQUEST);
-	if(_recv_dialog_packet(socks, &challenge, PKT_CHALLENGE)<0){
-		logerr("_recv_dialog_package(PKT_CHALLENGE) failed\n");
-		goto try_it_again_1;
-	}
-
-	_build_logout_packet(&logout_packet, info, &challenge, auth);
-
-	retry = 0;
-try_it_again_2:
-	retry++;
-	if(retry > 3)
-		return -1;
-	_send_dialog_packet(socks, &logout_packet, PKT_LOGOUT);
-	if(_recv_dialog_packet(socks, &acknowledgement, PKT_ACK_SUCCESS)<0){
-		logerr("_recv_dialog_package(PKT_ACK_SUCCESS) failed\n");
-		goto try_it_again_2;
-	}
-
-	if (acknowledgement.serv_header.pkt_type == PKT_ACK_SUCCESS){
-		loginfo("You have used %u minutes, and %uK bytes\n", 
-			acknowledgement.time_usage, acknowledgement.vol_usage);
-		return 0;
-	} else
-		return -1;
-}
-
-void _build_logout_packet(struct drcom_logout_packet *logout_packet, 
+static void _build_logout_packet(struct drcom_logout_packet *logout_packet, 
 			struct drcom_info *info, struct drcom_challenge *challenge, 
 			struct drcom_auth *auth)
 {
@@ -110,4 +67,105 @@ void _build_logout_packet(struct drcom_logout_packet *logout_packet,
 
 	return;
 }
+
+int drcom_logout(int s2, struct drcom_handle *h, int timeout)
+{
+	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
+	struct drcom_info *info = (struct drcom_info *) h->info;
+	struct drcom_auth *auth = (struct drcom_auth *) h->auth;
+	struct drcom_challenge challenge;
+	struct drcom_logout_packet logout_packet;
+	struct drcom_acknowledgement acknowledgement;
+	int retry = 0;
+
+	(void)timeout;
+
+try_it_again_1:
+	retry++;
+	if(retry > 3)
+		return -1;
+	_send_dialog_packet(socks, NULL, PKT_REQUEST);
+/*	report_daemon_msg(s2, "  PKT_REQUEST --->\n");*/
+
+	if(_recv_dialog_packet(socks, &challenge, PKT_CHALLENGE)<0){
+		report_daemon_msg(s2, "_recv_dialog_package(PKT_CHALLENGE) failed\n");
+		goto try_it_again_1;
+	}
+/*	report_daemon_msg(s2, "  <--- PKT_CHALLENGE\n");*/
+
+	_build_logout_packet(&logout_packet, info, &challenge, auth);
+
+	retry = 0;
+try_it_again_2:
+	retry++;
+	if(retry > 3)
+		return -1;
+	_send_dialog_packet(socks, &logout_packet, PKT_LOGOUT);
+/*	report_daemon_msg(s2, "  PKT_LOGOUT --->\n");*/
+
+	if(_recv_dialog_packet(socks, &acknowledgement, PKT_ACK_SUCCESS)<0){
+		report_daemon_msg(s2, "_recv_dialog_package(PKT_ACK_SUCCESS) failed\n");
+		goto try_it_again_2;
+	}
+
+	if (acknowledgement.serv_header.pkt_type == PKT_ACK_SUCCESS){
+/*		report_daemon_msg(s2, "  <--- PKT_ACK_SUCCESS\n");*/
+		report_daemon_msg(s2, "Logout Succeeded\n");
+		report_daemon_msg(s2, "You have used %u minutes, and %uK bytes\n", 
+			acknowledgement.time_usage, acknowledgement.vol_usage);
+		return 0;
+	} else{
+		report_daemon_msg(s2, "Server acknowledged failure\n");
+/*		report_daemon_msg(s2, "  <--- PKT_ACK_FAILURE\n");*/
+		return -1;
+	}
+}
+
+void do_command_logout(int s2, struct drcom_handle *h)
+{
+	struct drcomcd_logout cd_logout;
+	int r;
+
+	r = safe_recv(s2, &cd_logout, sizeof(struct drcomcd_logout));
+	if (r != sizeof(struct drcomcd_logout)) {
+		logerr("daemon: recv: %s", strerror(errno));
+		return;
+	}
+
+	if(status != STATUS_LOGGED_IN){
+		report_daemon_msg(s2,"Error, Already logged out\n");
+		report_final_result(s2, h, DRCOMCD_FAILURE);
+		return;
+	}
+
+	status = STATUS_BUSY;
+	/* Stop the threads here, since they might interfere with
+	   the logout process */
+	module_stop_auth();
+	pthread_cancel(th_keepalive);
+	pthread_cancel(th_watchport);
+	pthread_join(th_keepalive, NULL);
+	pthread_join(th_watchport, NULL);
+	/* Now try to log out */
+	r = drcom_logout(s2, h, cd_logout.timeout);
+	if(r != 0){
+		/* If logout failed, that means we are still logged in,
+		   so re-create the threads and continue authentication */
+		module_start_auth(h);
+		pthread_create(&th_watchport, NULL, daemon_watchport, h);
+		pthread_create(&th_keepalive, NULL, daemon_keepalive, h);
+
+		status = STATUS_LOGGED_IN;
+		report_daemon_msg(s2, "Logout failed\n");
+		report_final_result(s2, h, DRCOMCD_FAILURE);
+		return;
+	}
+
+	server_sock_destroy(h);
+
+	status = STATUS_IDLE;
+
+	report_final_result(s2, h, DRCOMCD_FAILURE);
+}
+
 

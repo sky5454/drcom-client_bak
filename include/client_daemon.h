@@ -1,26 +1,32 @@
-#ifndef CLIENT_DAEMON
-#define CLIENT_DAEMON
+#ifndef CLIENT_DAEMON_H_
+#define CLIENT_DAEMON_H_
 
 #include <stdint.h>
-#include <time.h>
 
 /* Signature */
-
 #define DRCOM_SIGNATURE 0xd4c0
 
 /* The packet header */
 
 struct drcomcd_hdr
 {
-  uint16_t signature; /* must be 0xd4c0 */
-  uint16_t type;
+	uint16_t signature; /* must be 0xd4c0 */
+	uint16_t type; 	/* for header from daemon to client, type indicates success or not */
+			/* for header from client to daemon, type indicates command to execute */
+	ssize_t  msg_len; /* the string message length after this header */
+	uint16_t is_end; /* is this packet the last header? */
 };
 
-/* The basic operations */
+/* drcomcd_hdr.type */
+#define DRCOMCD_MSG	0x0000
 
-#define DRCOMCD_LOGIN    0x0103
-#define DRCOMCD_LOGOUT   0x0106
-#define DRCOMCD_PASSWD   0x0109
+#define DRCOMCD_LOGIN   0x0103
+#define DRCOMCD_LOGOUT  0x0106
+#define DRCOMCD_PASSWD  0x0109
+
+#define DRCOMCD_SUCCESS 0x0004
+#define DRCOMCD_FAILURE 0x0005
+
 
 /* The data sent by drcomc */
 
@@ -41,26 +47,11 @@ struct drcomcd_passwd
   int timeout;
 };
 
-/* Replies from drcomcd */
 
-#define DRCOMCD_SUCCESS  0x0004
-#define DRCOMCD_FAILURE  0x0005
+#define DRCOMCD_SOCK "/var/run/drcomcd"
 
-/* The explanation */
 
-struct drcomcd_result
-{
-#define DRCOMCD_REASON_NO_REASON 0
-#define DRCOMCD_REASON_TIMEOUT 1
-#define DRCOMCD_REASON_REJECTED 2
-#define DRCOMCD_REASON_BUSY 3
-#define DRCOMCD_REASON_UNKNOWN 4
-  int reason;
-};
-
-/* The maximum size of packets on the socket */
-
-#define DRCOMCD_BUF_LEN 100
+extern ssize_t safe_recv(int, void *, size_t);
+extern ssize_t safe_send(int, const void *, size_t);
 
 #endif
-

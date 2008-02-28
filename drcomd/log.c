@@ -38,6 +38,8 @@ void dbg(const char *format, ...)
         va_start(args, format);
         log_message(LOG_DEBUG, format, args);
         va_end(args);
+#else
+	(void)format;
 #endif
 }
 

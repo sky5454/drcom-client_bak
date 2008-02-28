@@ -5,8 +5,7 @@
 /* for copy_to_user & copy_from_user */
 #include <asm/uaccess.h>
 
-#include "../include/config.h"
-#include "../include/drcom_types.h"
+#include "../include/daemon_kernel.h"
 
 #ifndef MAX
 #define MAX(a, b) (((a) > (b)) ? a : b)
@@ -64,7 +63,7 @@ static int write_all(const char *buffer, unsigned long count, void *data, int ma
 
 static int status_read(char *page, char **start, off_t off, int count, int *eof, void *data)
 {
-	return read_all(page, count, eof, data, STATUS_LEN);
+	return read_all(page, count, eof, data, sizeof(struct drcom_status_data));
 	/* Turn off the warnings and still get the same object file */
 	off = 0; start = 0;
 }
@@ -73,7 +72,7 @@ static int status_write(struct file *file, const char *buffer, unsigned long cou
 {
 	int len;
 
-	len = write_all(buffer, count, data, STATUS_LEN);
+	len = write_all(buffer, count, data, sizeof(struct drcom_status_data));
 	if(status_data->status == '1')
 		drcom_update_keepalive_timer();
 	else if(status_data->status =='0')
@@ -85,28 +84,28 @@ static int status_write(struct file *file, const char *buffer, unsigned long cou
 
 static int auth_read(char *page, char **start, off_t off, int count, int *eof, void *data)
 {
-	return read_all(page, count, eof, data, AUTH_LEN);
+	return read_all(page, count, eof, data, sizeof(struct drcom_auth_data));
 	/* Turn off the warnings and still get the same object file */
 	off = 0; start = 0;
 }
 
 static int auth_write(struct file *file, const char *buffer, unsigned long count, void *data)
 {
-	return write_all(buffer, count, data, AUTH_LEN);
+	return write_all(buffer, count, data, sizeof(struct drcom_auth_data));
 	/* Turn off the warnings and still get the same object file */
 	file = 0;
 }
 
 static int iface_read(char *page, char **start, off_t off, int count, int *eof, void *data)
 {
-	return read_all(page, count, eof, data, IFACE_LEN);
+	return read_all(page, count, eof, data, sizeof(struct drcom_iface_data));
 	/* Turn off the warnings and still get the same object file */
 	off = 0; start = 0;
 }
 
 static int iface_write(struct file *file, const char *buffer, unsigned long count, void *data)
 {
-	return write_all(buffer, count, data, IFACE_LEN);
+	return write_all(buffer, count, data, sizeof(struct drcom_iface_data));
 	/* Turn off the warnings and still get the same object file */
 	file = 0;
 }
@@ -127,7 +126,7 @@ static int except_write(struct file *file, const char *buffer, unsigned long cou
 
 static int pid_read(char *page, char **start, off_t off, int count, int *eof, void *data)
 {
-	return read_all(page, count, eof, data, MAX_PID_LEN);
+	return read_all(page, count, eof, data, sizeof(pid_t));
 	/* Turn off the warnings and still get the same object file */
 	off = 0; start = 0;
 }
@@ -135,7 +134,7 @@ static int pid_read(char *page, char **start, off_t off, int count, int *eof, vo
 static int pid_write(struct file *file, const char *buffer, unsigned long count, void *data)
 {
 	int len;
-	len = write_all(buffer, count, data, MAX_PID_LEN);
+	len = write_all(buffer, count, data, sizeof(pid_t));
 	return len;
 	/* Turn off the warnings and still get the same object file */
 	file = 0;
@@ -143,7 +142,7 @@ static int pid_write(struct file *file, const char *buffer, unsigned long count,
 
 static int autologout_read(char *page, char **start, off_t off, int count, int *eof, void *data)
 {
-	return read_all(page, count, eof, data, MAX_AUTOLOGOUT_LEN);
+	return read_all(page, count, eof, data, sizeof(char));
 	/* Turn off the warnings and still get the same object file */
 	off = 0; start = 0;
 }
@@ -151,7 +150,7 @@ static int autologout_read(char *page, char **start, off_t off, int count, int *
 static int autologout_write(struct file *file, const char *buffer, unsigned long count, void *data)
 {
 	int len;
-	len = write_all(buffer, count, data, MAX_AUTOLOGOUT_LEN);
+	len = write_all(buffer, count, data, sizeof(char));
 	return len;
 	/* Turn off the warnings and still get the same object file */
 	file = 0;

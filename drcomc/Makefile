@@ -8,8 +8,8 @@ OPTIMIZE = -O2
 CFLAGS = $(WARN) $(INCLUDE) $(OPTIMIZE)
 
 BINS = drcomc
-OBJS = drcomc.o
-SRCS = drcomc.c
+OBJS = drcomc.o ../utils/utils.o
+SRCS = drcomc.c ../utils/utils.c
 
 .PHONY: all clean install
 
@@ -24,5 +24,5 @@ install: $(BINS)
 
 drcomc: $(OBJS)
 
-drcomc.o: $(TOPSRCDIR)/include/config.h $(TOPSRCDIR)/include/client_daemon.h
+drcomc.o: $(TOPSRCDIR)/include/client_daemon.h
 

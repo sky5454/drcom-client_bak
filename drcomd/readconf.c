@@ -25,9 +25,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "drcomd.h"
+#include "daemon_server.h"
 #include "log.h"
 
-#include "private.h"
+#include "utils.h"
 
 #define __OPTLEN 256
 
@@ -348,7 +350,7 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 		if (optval_len == 0) { opts->hostip = 3; goto ok; }
 		r = inet_pton(AF_INET, optval, &ip);
 		if (r == 0)
-		{ opts->hostip = (_getaddr(optval, &conf->hostip) == 0) ? 1 : 2; goto ok; }
+		{ opts->hostip = (get_interface_ipaddr(optval, &conf->hostip) == 0) ? 1 : 2; goto ok; }
 		conf->hostip = ip.s_addr;
 		opts->hostip = 1;
 	}

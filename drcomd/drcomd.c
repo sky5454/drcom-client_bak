@@ -8,11 +8,20 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#include "config.h"
+#include "drcomd.h"
 #include "client_daemon.h"
-#include "daemon.h"
-
 #include "log.h"
+
+#define DRCOM_VERSION	"1.4.0"
+
+extern void *daemon_watchport(void *);
+extern void *daemon_keepalive(void *);
+extern void module_start_auth(struct drcom_handle *);
+extern void module_stop_auth(void);
+
+int status = 0;
+int sigusr1_pipe[2] = {-1,-1};
+pthread_t th_watchport = 0, th_keepalive = 0;
 
 static void usage(void)
 {
@@ -57,7 +66,7 @@ static void daemonize(void)
 	dbg("our session is %d", sid);
 }
 
-static void init_module(void)
+static void load_kernel_module(void)
 {
 	int r;
 	char s[50];
@@ -70,7 +79,64 @@ static void init_module(void)
 	}
 }
 
-static int init_socket(void)
+static void do_one_client(int s, struct drcom_handle *h)
+{
+	struct drcomcd_hdr cd_hdr;
+	int s2;
+	fd_set	rfds;
+	struct timeval t;
+	int r;
+
+	s2 = accept(s, NULL, NULL);
+	if (s2 == -1 && errno != EINTR) {
+		logerr("daemon: accept failed: %s", strerror(errno));
+		return;
+	}
+
+	FD_ZERO(&rfds);
+	FD_SET(s2, &rfds);
+	t.tv_sec = 2;
+	t.tv_usec = 0;
+	r = select(s2+1, &rfds, NULL, NULL, &t);
+	if(r<=0){
+		logerr("accepted, but no data\n");
+		goto error;
+	}
+
+	if(!FD_ISSET(s2, &rfds)){
+		goto error;
+	}
+
+	r = safe_recv(s2, &cd_hdr, sizeof(struct drcomcd_hdr));
+	if (r != sizeof(struct drcomcd_hdr)){
+		logerr("daemon: recv: %s", strerror(errno));
+		goto error;
+	}
+	if (cd_hdr.signature != DRCOM_SIGNATURE) {
+		logerr("Unknown signature\n");
+		goto error;
+	}
+
+	switch (cd_hdr.type) {
+	case DRCOMCD_LOGIN:
+		do_command_login(s2, h);
+		break;
+	case DRCOMCD_LOGOUT:
+		do_command_logout(s2, h);
+		break;
+	case DRCOMCD_PASSWD:
+		do_command_passwd(s2, h);
+		break;
+	default:
+		break;
+	}
+
+error:
+	close(s2);
+	return;
+}
+ 
+static int init_daemon_socket(void)
 {
 	int s, r;
 	struct sockaddr_un un_daemon;
@@ -82,27 +148,87 @@ static int init_socket(void)
 
 	s = socket(PF_UNIX, SOCK_STREAM, 0);
 	if (s == -1) {
-		fprintf(stderr, "drcomd: Socket creation failed: %s\n", strerror(errno));
-		exit(EXIT_FAILURE);
+		logerr("drcomd: Socket creation failed: %s\n", strerror(errno));
+		return -1;
 	}
 	/* this ensures only one copy running */
 	r = bind(s, (struct sockaddr *) &un_daemon, sizeof(un_daemon));
 	if (r) {
-		fprintf(stderr, "drcomd: Bind failed: %s\n", strerror(errno));
-		exit(EXIT_FAILURE);
+		logerr("drcomd: Bind failed: %s\n", strerror(errno));
+		return -1;
 	}
 	r = listen(s, 1);
 	if (r) {
-		fprintf(stderr, "drcomd: Listen failed: %s\n", strerror(errno));
-		exit(EXIT_FAILURE);
+		logerr("drcomd: Listen failed: %s\n", strerror(errno));
+		return -1;
 	}
 
 	return s;
 }
 
-int main(int argc, char **argv)
+static void drcomd_daemon(void)
 {
 	int s;
+	struct drcom_handle *h;
+	int r;
+
+	s = init_daemon_socket();
+	if(s < 0)
+		exit(-1);
+
+	if(setup_sig_handlers()<0){
+		logerr("sig handlers not setup, exit.\n");
+		exit(1);
+	}
+
+	/* Initialize the handle for the lifetime of the daemon */
+	h = drcom_create_handle();
+	drcom_init(h);
+
+	loginfo("drcomd %s started.\n", DRCOM_VERSION);
+
+	while (1) {
+		int maxfd;
+		fd_set readfds;
+
+		FD_ZERO(&readfds);
+		FD_SET(s, &readfds);
+		FD_SET(sigusr1_pipe[READ_END], &readfds);
+		
+		maxfd = s;
+		if(maxfd < sigusr1_pipe[READ_END])
+			maxfd = sigusr1_pipe[READ_END];
+
+		unblock_sigusr1();
+		r = select(maxfd+1, &readfds, NULL,NULL, NULL);
+		if(r<0){
+			if(errno != EINTR)
+				logerr("signal caught\n");
+			continue;
+		}
+		if(FD_ISSET(sigusr1_pipe[READ_END], &readfds)){
+			char buf[256];
+			int *sig = (int*)buf;
+
+			read(sigusr1_pipe[READ_END], &buf, sizeof(buf));
+			do_signals(h, *sig);
+		}
+		if(!FD_ISSET(s, &readfds))
+			continue;
+
+		block_sigusr1();
+		do_one_client(s, h);
+	}
+
+	/* FIXME: 
+	 * drcom_clean_up();
+	 * drcom_destroy_handle();
+	 * close_daemon_socket(); 
+	 */
+}
+
+int main(int argc, char **argv)
+{
 	int daemon = 1;
 	int i;
 
@@ -117,17 +243,17 @@ int main(int argc, char **argv)
 		}
 	}
 
-	init_module();
-	s = init_socket();
-
-	logging_init("drcomd", daemon);
+	load_kernel_module();
 
 	if (daemon)
 		daemonize();
 
-	drcomcd_daemon(s);
+	logging_init("drcomd", daemon);
+
+	drcomd_daemon();
 
 	logging_close();
+
 	return 0;
 }
 

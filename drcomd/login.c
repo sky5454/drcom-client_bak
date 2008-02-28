@@ -19,95 +19,17 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <pthread.h>
 
 #include "md5.h"
 
+#include "drcomd.h"
+#include "daemon_server.h"
+#include "client_daemon.h"
 #include "log.h"
 
-#include "private.h"
-
-void _build_login_packet(struct drcom_login_packet *, struct drcom_info *, struct drcom_host *, struct drcom_challenge *);
-void _build_authentication(struct drcom_auth *, struct drcom_acknowledgement *);
-void _build_keepalive(struct drcom_host_msg *, struct drcom_login_packet *, struct drcom_acknowledgement *);
-/*
-static void mylog_message(int priority, const char *format, va_list args)
-{
-        vfprintf(stderr, format, args);
-}
-
-void myloginfo(const char *format, ...)
-{
-        va_list args;
-        va_start(args, format);
-        mylog_message(LOG_INFO, format, args);
-        va_end(args);
-}
-*/
-/* drcom_login
-	Logs in.
-*/
-
-int drcom_login(struct drcom_handle *h, int timeout)
-{
-	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
-	struct drcom_info *info = (struct drcom_info *) h->info;
-	struct drcom_host *host = (struct drcom_host *) h->host;
-	struct drcom_host_msg *response = (struct drcom_host_msg *) h->response;
-	struct drcom_host_msg *keepalive = (struct drcom_host_msg *) h->keepalive;
-	struct drcom_auth *auth = (struct drcom_auth *) h->auth;
-	struct drcom_challenge challenge;
-	struct drcom_login_packet login_packet;
-	struct drcom_acknowledgement acknowledgement;
-	int retry=0;
-
-try_it_again_1:
-	retry++;
-	if(retry>3)
-		return -1;
-	if(_send_dialog_packet(socks, NULL, PKT_REQUEST)<0){
-		logerr("_send_dialog_packet(PKT_REQUEST) failed\n");
-		return -1;
-	}
-
-	if(_recv_dialog_packet(socks, &challenge, PKT_CHALLENGE)<0){
-		logerr("_recv_dialog_packet(PKT_CHALLENGE) failed\n");
-		goto try_it_again_1;
-	}
-
-	/* Now the _real_ ip address of the server is known */
-	info->servip = socks->servaddr_in.sin_addr.s_addr;
-
-	_build_login_packet(&login_packet, info, host, &challenge);
-
-	retry=0;
-try_it_again_2:
-	retry++;
-	if(retry>3)
-		return -1;
-	if(_send_dialog_packet(socks, &login_packet, PKT_LOGIN)<0){
-		logerr("_send_dialog_packet(PKT_LOGIN) failed\n");
-		return -1;
-	}
-
-	if(_recv_dialog_packet(socks, &acknowledgement, PKT_ACK_SUCCESS)<0){
-		logerr("_recv_dialog_packet(PKT_ACK_SUCCESS) failed\n");
-		goto try_it_again_2;
-	}
-
-	if (acknowledgement.serv_header.pkt_type == PKT_ACK_SUCCESS)
-	{
-		_build_authentication(auth, &acknowledgement);
-		_build_keepalive(keepalive, &login_packet, &acknowledgement);
-		memcpy(response, keepalive, sizeof(*keepalive));
-		loginfo("You have used %u Minutes, and %uK bytes\n", 
-			acknowledgement.time_usage, acknowledgement.vol_usage);
-		return 0;
-	}
-	else
-		return -1;
-}
-
-void _build_login_packet(struct drcom_login_packet *login_packet, 
+static void _build_login_packet(struct drcom_login_packet *login_packet, 
 			struct drcom_info *info, struct drcom_host *host, 
 			struct drcom_challenge *challenge)
 {
@@ -196,13 +118,13 @@ void _build_login_packet(struct drcom_login_packet *login_packet,
 	return;
 }
 
-void _build_authentication(struct drcom_auth *auth, struct drcom_acknowledgement *acknowledgement)
+static void _build_authentication(struct drcom_auth *auth, struct drcom_acknowledgement *acknowledgement)
 {
 	memcpy(auth, &acknowledgement->auth_info, sizeof(struct drcom_auth));
 	return;
 }
 
-void _build_keepalive(struct drcom_host_msg *keepalive, struct drcom_login_packet *login_packet, struct drcom_acknowledgement *acknowledgement)
+static void _build_keepalive(struct drcom_host_msg *keepalive, struct drcom_login_packet *login_packet, struct drcom_acknowledgement *acknowledgement)
 {
 	keepalive->msgtype = 0xff;
 	memset(keepalive->msg, 0, 19);
@@ -210,4 +132,127 @@ void _build_keepalive(struct drcom_host_msg *keepalive, struct drcom_login_packe
 	memcpy(&keepalive->auth_info, &acknowledgement->auth_info, sizeof(struct drcom_auth));
 	return;
 }
+
+
+static int drcom_login(int s2, struct drcom_handle *h, int timeout)
+{
+	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
+	struct drcom_info *info = (struct drcom_info *) h->info;
+	struct drcom_host *host = (struct drcom_host *) h->host;
+	struct drcom_host_msg *response = (struct drcom_host_msg *) h->response;
+	struct drcom_host_msg *keepalive = (struct drcom_host_msg *) h->keepalive;
+	struct drcom_auth *auth = (struct drcom_auth *) h->auth;
+	struct drcom_challenge challenge;
+	struct drcom_login_packet login_packet;
+	struct drcom_acknowledgement acknowledgement;
+	int retry=0;
+
+	(void)timeout;
+
+try_it_again_1:
+	retry++;
+	if(retry>3)
+		return -1;
+	if(_send_dialog_packet(socks, NULL, PKT_REQUEST)<0){
+		report_daemon_msg(s2, "_send_dialog_packet(PKT_REQUEST) failed\n");
+		return -1;
+	}
+/*	report_daemon_msg(s2, "  PKT_REQUEST --->\n");*/
+
+	if(_recv_dialog_packet(socks, &challenge, PKT_CHALLENGE)<0){
+		report_daemon_msg(s2, "_recv_dialog_packet(PKT_CHALLENGE) failed\n");
+		goto try_it_again_1;
+	}
+/*	report_daemon_msg(s2, "  <--- PKT_CHALLENGE\n");*/
+
+	/* Now the _real_ ip address of the server is known */
+	info->servip = socks->servaddr_in.sin_addr.s_addr;
+
+	_build_login_packet(&login_packet, info, host, &challenge);
+
+	retry=0;
+try_it_again_2:
+	retry++;
+	if(retry>3)
+		return -1;
+	if(_send_dialog_packet(socks, &login_packet, PKT_LOGIN)<0){
+		report_daemon_msg(s2, "_send_dialog_packet(PKT_LOGIN) failed\n");
+		return -1;
+	}
+/*	report_daemon_msg(s2, "  PKT_LOGIN --->\n");*/
+
+	if(_recv_dialog_packet(socks, &acknowledgement, PKT_ACK_SUCCESS)<0){
+		report_daemon_msg(s2, "_recv_dialog_packet(PKT_ACK_SUCCESS) failed\n");
+		goto try_it_again_2;
+	}
+
+	if (acknowledgement.serv_header.pkt_type == PKT_ACK_SUCCESS)
+	{
+		_build_authentication(auth, &acknowledgement);
+		_build_keepalive(keepalive, &login_packet, &acknowledgement);
+		memcpy(response, keepalive, sizeof(*keepalive));
+/*		report_daemon_msg(s2, "  <--- PKT_ACK_SUCCESS\n");*/
+		report_daemon_msg(s2, "Login Succeeded\n");
+		report_daemon_msg(s2, "You have used %u Minutes, and %uK bytes\n", 
+			acknowledgement.time_usage, acknowledgement.vol_usage);
+		return 0;
+	}
+	else{
+/*		report_daemon_msg(s2, "  <---  PKT_ACK_FAILURE\n");*/
+		report_daemon_msg(s2, "Server acknowledged failure\n");
+		return -1;
+	}
+}
+
+static void recv_initial_server_msg(struct drcom_handle *h)
+{
+	(void)h;
+}
+
+void do_command_login(int s2, struct drcom_handle *h)
+{
+	struct drcomcd_login cd_login;
+	int r;
+
+	r = safe_recv(s2, &cd_login, sizeof(struct drcomcd_login));
+	if (r != sizeof(struct drcomcd_login)) {
+		logerr("daemon: recv: %s", strerror(errno));
+		return;
+	}
+
+	if(status != STATUS_IDLE){
+		report_daemon_msg(s2, "Error, Already logged in\n");
+		report_final_result(s2, h, DRCOMCD_FAILURE);
+		return;
+	}
+
+	status = STATUS_BUSY;
+	r = server_sock_init(h);
+	if(r!=0){
+		status = STATUS_IDLE;
+		report_daemon_msg(s2, "Cannot create socket to server\n");
+		report_final_result(s2, h, DRCOMCD_FAILURE);
+		return;
+	}
+
+	r = drcom_login(s2, h, cd_login.timeout);
+	if(r != 0){
+		status = STATUS_IDLE;
+		server_sock_destroy(h);
+		report_daemon_msg(s2, "Login failed\n");
+		report_final_result(s2, h, DRCOMCD_FAILURE);
+		return;
+	}
+
+	status = STATUS_LOGGED_IN;
+
+	recv_initial_server_msg(h);
+
+	module_start_auth(h);
+	pthread_create(&th_watchport,NULL,daemon_watchport, h);
+	pthread_create(&th_keepalive,NULL,daemon_keepalive, h);
+
+	report_final_result(s2, h, DRCOMCD_SUCCESS);
+}
+
 
