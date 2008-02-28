@@ -133,9 +133,6 @@ static int drcom_stream_sendmsg_auth(struct kiocb *iocb, struct socket *sock,
 	int ret, n_iovec;
 	mm_segment_t old_fs;
 
-	/* Yes, this is really bottleneck, 
-	 * but do we have other way? 
-	 */
 	if(down_interruptible(&auth_mutex))
 		return -ERESTARTSYS;
 
