@@ -58,7 +58,7 @@ static uint16_t _prepare_folded(struct drcom_info *info, struct drcom_host_msg *
 static int _respond(struct drcom_socks *socks, uint16_t folded, 
 		struct drcom_host_msg *keepalive_skel, uint8_t *question)
 {
-	struct drcom_host_msg *answer = malloc(sizeof(*answer));
+	struct drcom_host_msg ans, *answer = &ans;
 	struct sockaddr_in servaddr_in;
 	unsigned char digest[16];
 	uint16_t x;
@@ -98,7 +98,7 @@ static int drcom_watchport(struct drcom_handle *h)
 	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
 	struct drcom_info *info = (struct drcom_info *) h->info;
 	struct drcom_host_msg *keepalive_skel = (struct drcom_host_msg *) h->response;
-	struct drcom_serv_msg *serv_msg = (struct drcom_serv_msg *) malloc(sizeof(struct drcom_serv_msg));
+	struct drcom_serv_msg s_msg, *serv_msg = &s_msg;
 	uint16_t folded;
 	int r;
 	struct sockaddr_in servaddr_in;
@@ -150,8 +150,6 @@ static int drcom_watchport(struct drcom_handle *h)
 		}
 	}
 
-	if(serv_msg)
-		free(serv_msg);
 err:
 	return -1;
 }

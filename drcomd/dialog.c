@@ -84,17 +84,12 @@ static void dump_packet(unsigned char *pkt, int len)
 
 int _send_dialog_packet(struct drcom_socks *socks, void *buf, uint16_t type)
 {
-	struct drcom_request *request=NULL;
+	struct drcom_request req, *request=&req;
 	int len, r;
 
 	switch (type) {
 	case PKT_REQUEST:
 		len = sizeof(struct drcom_request);
-		request = (struct drcom_request *) malloc(sizeof(struct drcom_request));
-		if(request == NULL){
-			logerr("_send_dialog_packet:malloc failed\n");
-			return -1;
-		}
 		memset(request, 0, sizeof(struct drcom_request));
 
 		request->host_header.pkt_type = PKT_REQUEST;
@@ -126,9 +121,6 @@ int _send_dialog_packet(struct drcom_socks *socks, void *buf, uint16_t type)
 	r = sendto(socks->sockfd, buf, len, 0,
 			(struct sockaddr *) &socks->servaddr_in,
 			sizeof(struct sockaddr));
-
-	if(request)
-		free(request);
 
 	if (r != len){
 		logerr("send:failed\n");

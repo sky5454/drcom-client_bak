@@ -32,6 +32,40 @@
 
 #include "log.h"
 
+struct drcom_handle *drcom_create_handle(void)
+{
+	struct drcom_handle *h;
+
+	/*FIXME: check malloc failure */
+	h = (struct drcom_handle *) malloc(sizeof(struct drcom_handle));
+	h->conf = (struct drcom_conf *) malloc(sizeof(struct drcom_conf));
+	h->socks = (struct drcom_socks *) malloc(sizeof(struct drcom_socks));
+	h->info = (struct drcom_info *) malloc(sizeof(struct drcom_info));
+	h->session = (struct drcom_session_info *) malloc(sizeof(struct drcom_session_info));
+	h->host = (struct drcom_host *) malloc(sizeof(struct drcom_host));
+	h->auth = (struct drcom_auth *) malloc(sizeof(struct drcom_auth));
+	h->keepalive = (struct drcom_host_msg *) malloc(sizeof(struct drcom_host_msg));
+	h->response = (struct drcom_host_msg *) malloc(sizeof(struct drcom_host_msg));
+
+	return h;
+}
+
+int drcom_destroy_handle(struct drcom_handle *h)
+{
+	/* FIXME: check NULL pointer */
+	free(h->conf);
+	free(h->socks);
+	free(h->info);
+	free(h->session);
+	free(h->host);
+	free(h->auth);
+	free(h->keepalive);
+	free(h->response);
+	free(h);
+
+	return 0;
+}
+
 struct drcom_session_info *drcom_get_session_info(struct drcom_handle *h)
 {
 	struct drcom_session_info *s = h->session;
@@ -76,15 +110,6 @@ int drcom_init(struct drcom_handle *h)
 	return 0;
 }
 
-void server_sock_destroy(struct drcom_handle *h)
-{
-	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
-
-	if(socks->sockfd >= 0)
-		close(socks->sockfd);
-	socks->sockfd = -1;
-}
-
 int server_sock_init(struct drcom_handle *h)
 {
 	int r;
@@ -107,6 +132,15 @@ int server_sock_init(struct drcom_handle *h)
 		return -1;
 
 	return 0;
+}
+
+void server_sock_destroy(struct drcom_handle *h)
+{
+	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
+
+	if(socks->sockfd >= 0)
+		close(socks->sockfd);
+	socks->sockfd = -1;
 }
 
 void report_daemon_msg(int s2, const char *format, ...)
@@ -218,39 +252,5 @@ void report_final_result(int s2, struct drcom_handle *h, int result)
 		logerr("daemon: send: %s", strerror(errno));
 		return;
 	}
-}
-
-struct drcom_handle *drcom_create_handle(void)
-{
-	struct drcom_handle *h;
-
-	/*FIXME: check malloc failure */
-	h = (struct drcom_handle *) malloc(sizeof(struct drcom_handle));
-	h->conf = (struct drcom_conf *) malloc(sizeof(struct drcom_conf));
-	h->socks = (struct drcom_socks *) malloc(sizeof(struct drcom_socks));
-	h->info = (struct drcom_info *) malloc(sizeof(struct drcom_info));
-	h->session = (struct drcom_session_info *) malloc(sizeof(struct drcom_session_info));
-	h->host = (struct drcom_host *) malloc(sizeof(struct drcom_host));
-	h->auth = (struct drcom_auth *) malloc(sizeof(struct drcom_auth));
-	h->keepalive = (struct drcom_host_msg *) malloc(sizeof(struct drcom_host_msg));
-	h->response = (struct drcom_host_msg *) malloc(sizeof(struct drcom_host_msg));
-
-	return h;
-}
-
-int drcom_destroy_handle(struct drcom_handle *h)
-{
-	/* FIXME: check NULL pointer */
-	free(h->conf);
-	free(h->socks);
-	free(h->info);
-	free(h->session);
-	free(h->host);
-	free(h->auth);
-	free(h->keepalive);
-	free(h->response);
-	free(h);
-
-	return 0;
 }
 
