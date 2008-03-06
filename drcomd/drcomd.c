@@ -143,7 +143,7 @@ static int init_daemon_socket(void)
 
 	memset(&un_daemon, 0x00, sizeof(struct sockaddr_un));
 	un_daemon.sun_family = AF_UNIX;
-	/* use abstract namespave */
+	/* use abstract namespace */
 	strncpy(&un_daemon.sun_path[1], DRCOMCD_SOCK, sizeof(un_daemon.sun_path)-1);
 
 	s = socket(PF_UNIX, SOCK_STREAM, 0);

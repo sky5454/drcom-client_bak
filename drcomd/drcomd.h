@@ -24,6 +24,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <linux/if.h>
+
+#include "daemon_server.h"
 
 /* Use a simple handle */
 struct msg_item
@@ -33,35 +36,13 @@ struct msg_item
 	unsigned char *msg;
 };
 
-struct drcom_handle
-{
-  uint8_t *conf;
-  uint8_t *socks;
-  uint8_t *info;
-  uint8_t *host;
-  uint8_t *auth;
-  uint8_t *keepalive;
-  uint8_t *response;
-  struct msg_item *msg_head;
-};
-
 /* Used by drcomcd to initialize drcom.o */
-
-struct drcom_session_info
-{
-  uint8_t *auth;
-  uint32_t hostip;
-  uint32_t servip;
-  uint16_t hostport;
-  uint16_t servport;
-  uint32_t dnsp;
-  uint32_t dnss;
-};
 
 struct drcom_conf
 {
   char username[36];
   char password[16];
+  char device[IFNAMSIZ];
   u_int8_t mac[6];
   u_int32_t nic[4];
   u_int32_t dnsp;
@@ -90,6 +71,7 @@ struct drcom_info
 {
   char username[36];
   char password[16];
+  char device[IFNAMSIZ];
   u_int8_t mac[6];
   u_int32_t nic[4];
   u_int32_t hostip;
@@ -98,6 +80,29 @@ struct drcom_info
   u_int16_t servport;
 };
 
+struct drcom_session_info
+{
+  uint8_t auth[sizeof(struct drcom_auth)];
+  uint32_t hostip;
+  uint32_t servip;
+  uint16_t hostport;
+  uint16_t servport;
+  uint32_t dnsp;
+  uint32_t dnss;
+};
+
+struct drcom_handle
+{
+  struct drcom_conf *conf;
+  struct drcom_socks *socks;
+  struct drcom_info *info;
+  struct drcom_session_info *session;
+  struct drcom_host *host;
+  struct drcom_auth *auth;
+  struct drcom_host_msg *keepalive;
+  struct drcom_host_msg *response;
+  struct msg_item *msg_head;
+};
 
 /* Log file */
 #define DRCOMCD_LOG_FILE "/var/log/drcomcd"
@@ -151,6 +156,12 @@ extern struct drcom_handle *drcom_create_handle(void);
 extern int drcom_destroy_handle(struct drcom_handle *);
 extern struct drcom_session_info *drcom_get_session_info(struct drcom_handle *);
 extern int drcom_init(struct drcom_handle *);
+
+extern int _readconf(struct drcom_conf *, struct drcom_info *, struct drcom_host *);
+
+extern int _send_dialog_packet(struct drcom_socks *, void *, u_int16_t);
+extern int _recv_dialog_packet(struct drcom_socks *, void *, u_int16_t);
+
 
 #endif
 

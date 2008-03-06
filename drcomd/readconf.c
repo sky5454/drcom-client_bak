@@ -21,10 +21,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+/*#include <linux/sockios.h>
+#include <linux/if.h>
+*/
 #include "drcomd.h"
 #include "daemon_server.h"
 #include "log.h"
@@ -51,6 +56,7 @@ struct _opt_checklist
 {
 	u_int8_t username;
 	u_int8_t password;
+	u_int8_t dev;
 	u_int8_t mac;
 	u_int8_t nic[4];
 	u_int8_t dnsp;
@@ -81,7 +87,7 @@ int _readconf(struct drcom_conf *conf, struct drcom_info *info, struct drcom_hos
 {
 	FILE *dotconf;
 	char buf[__OPTLEN], *s;
-	struct _opt_checklist opts = {0,0,0,{0,0,0,0},0,0,0,0,0,0,0,0,0,0,0};
+	struct _opt_checklist opts = {0,0,0,0,{0,0,0,0},0,0,0,0,0,0,0,0,0,0,0};
 	int lineno = 0, r = 0;
 
 	dotconf = fopen(DRCOM_CONF, "r");
@@ -239,7 +245,7 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 
 	int len, optname_len, optval_len, r;
 	long int l;
-	unsigned int _mac[6];
+/*	unsigned int _mac[6];*/
 	char optname[256], optval[256];
 	struct in_addr ip = {0};
 
@@ -282,6 +288,51 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 		strncpy(conf->password, optval, 16);
 		opts->password = 1; goto ok;
 	}
+	else if (__isopt("device", 6))
+	{
+		if (optval_len == 0) { goto ok; }
+		else
+		{
+			int s;
+			struct ifreq ifr;
+			struct sockaddr_in *sin = (struct sockaddr_in *)&ifr.ifr_addr;
+
+			s = socket (AF_INET, SOCK_DGRAM, 0);
+			if (s == -1) {
+				logerr("Cannot Create DGRAM socket to get device address\n");
+				goto err;
+			}
+			strncpy(ifr.ifr_name, optval, IFNAMSIZ);
+			r = ioctl(s, SIOCGIFHWADDR, &ifr);
+			if (r != 0) {
+				logerr("Cannot get device mac address\n");
+				close(s);
+				goto err;
+			}
+			memcpy(conf->mac, ifr.ifr_hwaddr.sa_data, 6);
+			opts->mac = 1;
+
+			strncpy(ifr.ifr_name, optval, IFNAMSIZ);
+			r = ioctl(s, SIOCGIFADDR, &ifr);
+			if (r != 0) {
+				logerr("Cannot get device mac address\n");
+				close(s);
+				goto err;
+			}
+			conf->nic[0] = sin->sin_addr.s_addr; opts->nic[0] = 1;
+
+			close(s);
+
+			strncpy(conf->device, optval, IFNAMSIZ);
+			conf->device[IFNAMSIZ-1] = '\0';
+			opts->dev = 1;
+
+			goto ok;
+		}
+	}
+	else if (__isopt("mac", 3)) goto ok;
+	else if (__optprefix("nic", 3)) goto ok;
+/*
 	else if (__isopt("mac", 3))
 	{
 		if (opts->mac != 0) { opts->mac = 4; goto ok; }
@@ -311,6 +362,7 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 		}
 		else goto err;
 	}
+*/
 	else if (__optprefix("dns", 3))
 	{
 		if (optname_len > 4) goto err;
@@ -445,6 +497,11 @@ int __fillopts(struct drcom_conf *conf, struct drcom_info *info, struct drcom_ho
 
 	if (opts->password == 1)
 		memcpy(info->password, conf->password, 16);
+	else
+		return -1;
+
+	if (opts->dev == 1)
+		memcpy(info->device, conf->device, IFNAMSIZ);
 	else
 		return -1;
 

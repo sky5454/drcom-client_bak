@@ -417,6 +417,8 @@ static void cleanup_jfunc(void)
 
 #include <linux/security.h>
 
+extern struct security_operations *security_ops;
+
 static void (*sys_socket_post_create)(struct socket *, int, int, int, int);
 
 static void drcom_socket_post_create(struct socket *sock, int family,

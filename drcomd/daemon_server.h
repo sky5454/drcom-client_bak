@@ -151,11 +151,7 @@ struct drcom_acknowledgement
 
 /* Functions used internally */
 
-int _readconf(struct drcom_conf *, struct drcom_info *, struct drcom_host *);
 int _getaddr(char *, u_int32_t *);
-
-int _send_dialog_packet(struct drcom_socks *, void *, u_int16_t);
-int _recv_dialog_packet(struct drcom_socks *, void *, u_int16_t);
 
 /* Values for pkt_type */
 
@@ -169,12 +165,13 @@ int _recv_dialog_packet(struct drcom_socks *, void *, u_int16_t);
 
 /* Some constants */
 
+/*
 #define DRCOM_SOCKS_LEN sizeof(struct drcom_socks)
 #define DRCOM_INFO_LEN sizeof(struct drcom_info)
 #define DRCOM_HOST_LEN sizeof(struct drcom_host)
 #define DRCOM_AUTH_LEN sizeof(struct drcom_auth)
 #define DRCOM_HOST_MSG_LEN sizeof(struct drcom_host_msg)
 #define DRCOM_SERV_MSG_LEN sizeof(struct drcom_serv_msg)
-
+*/
 #endif
 

@@ -40,10 +40,10 @@ static int drcom_keepalive(struct drcom_handle *h)
 
 	while (1)
 	{
-		r = sendto(socks->sockfd, host_msg, DRCOM_HOST_MSG_LEN, 0,
+		r = sendto(socks->sockfd, host_msg, sizeof(struct drcom_host_msg), 0,
 			(struct sockaddr *) &servaddr_in,
 			sizeof(struct sockaddr));
-		if (r != DRCOM_HOST_MSG_LEN)
+		if (r != sizeof(struct drcom_host_msg))
 			goto err;
 
 		sleep(10);

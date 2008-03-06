@@ -98,7 +98,7 @@ static int drcom_watchport(struct drcom_handle *h)
 	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
 	struct drcom_info *info = (struct drcom_info *) h->info;
 	struct drcom_host_msg *keepalive_skel = (struct drcom_host_msg *) h->response;
-	struct drcom_serv_msg *serv_msg = (struct drcom_serv_msg *) malloc(DRCOM_SERV_MSG_LEN);
+	struct drcom_serv_msg *serv_msg = (struct drcom_serv_msg *) malloc(sizeof(struct drcom_serv_msg));
 	uint16_t folded;
 	int r;
 	struct sockaddr_in servaddr_in;
@@ -114,8 +114,8 @@ static int drcom_watchport(struct drcom_handle *h)
 
 	while (1) {
 		/* cleanup the buffer first */
-		memset(serv_msg, 0, DRCOM_SERV_MSG_LEN);
-		r = recvfrom(socks->sockfd, serv_msg, DRCOM_SERV_MSG_LEN, 0,
+		memset(serv_msg, 0, sizeof(struct drcom_serv_msg));
+		r = recvfrom(socks->sockfd, serv_msg, sizeof(struct drcom_serv_msg), 0,
 				 (struct sockaddr *) &servaddr_in, &fromlen);
 		if (r < 0)
 		{
