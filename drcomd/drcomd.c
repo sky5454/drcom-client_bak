@@ -14,11 +14,6 @@
 
 #define DRCOM_VERSION	"1.4.0"
 
-extern void *daemon_watchport(void *);
-extern void *daemon_keepalive(void *);
-extern void module_start_auth(struct drcom_handle *);
-extern void module_stop_auth(void);
-
 int status = 0;
 int sigusr1_pipe[2] = {-1,-1};
 pthread_t th_watchport = 0, th_keepalive = 0;
@@ -166,10 +161,9 @@ static int init_daemon_socket(void)
 	return s;
 }
 
-static void drcomd_daemon(void)
+static void drcomd_daemon(struct drcom_handle *h)
 {
 	int s;
-	struct drcom_handle *h;
 	int r;
 
 	s = init_daemon_socket();
@@ -180,10 +174,6 @@ static void drcomd_daemon(void)
 		logerr("sig handlers not setup, exit.\n");
 		exit(1);
 	}
-
-	/* Initialize the handle for the lifetime of the daemon */
-	h = drcom_create_handle();
-	drcom_init(h);
 
 	loginfo("drcomd %s started.\n", DRCOM_VERSION);
 
@@ -229,6 +219,7 @@ static void drcomd_daemon(void)
 
 int main(int argc, char **argv)
 {
+	struct drcom_handle *h;
 	int daemon = 1;
 	int i;
 
@@ -243,6 +234,13 @@ int main(int argc, char **argv)
 		}
 	}
 
+	/* Initialize the handle for the lifetime of the daemon */
+	h = drcom_create_handle();
+	if(drcom_init(h)<0){
+		logerr("conf file err\n");
+		exit(-1);
+	}
+
 	load_kernel_module();
 
 	if (daemon)
@@ -250,7 +248,7 @@ int main(int argc, char **argv)
 
 	logging_init("drcomd", daemon);
 
-	drcomd_daemon();
+	drcomd_daemon(h);
 
 	logging_close();
 

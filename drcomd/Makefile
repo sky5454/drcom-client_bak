@@ -5,8 +5,8 @@ DESTDIR ?= $(HOME)/bin
 CC = gcc
 WARN = -Wall -W -Wstrict-prototypes -Wmissing-prototypes -pedantic
 INCLUDE = -I$(TOPSRCDIR)/include
-OPTIMIZE = -O2
-CFLAGS = $(WARN) $(INCLUDE) $(OPTIMIZE)
+OPTIMIZE = -g
+CFLAGS = $(WARN) $(INCLUDE) $(OPTIMIZE) 
 LDFLAGS = -lm -lpthread
 
 BINS = drcomd

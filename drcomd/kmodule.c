@@ -1,157 +1,100 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "drcomd.h"
 #include "daemon_kernel.h"
+#include "tcptrack.h"
 
 #include "log.h"
 
-void module_start_auth(struct drcom_handle *h)
+int module_start_auth(struct drcom_handle *h)
 {
-	struct drcom_status_data status_data;
-	struct drcom_auth_data auth_data;
-	struct drcom_iface_data iface_data;
-	struct drcom_except_data except_data[MAX_EXCEPT_ITEMS];
+	int sock;
+	struct drcom_conf *conf = (struct drcom_conf*)h->conf;
 	struct drcom_session_info *s;
-	int authlen, r;
-	FILE *f;
+	struct conn_param *cp;
+        struct conn_auth_cmd cmd;
+	int len, ret;
+
+	sock = socket(PF_INET, SOCK_DGRAM, 0);
+	if (sock < 0){
+		logerr("socket create failure\n");
+		return -1;
+	}
+
+	len = sizeof(struct e_address)*conf->except_count+sizeof(struct conn_param);
+	cp = (struct conn_param *)malloc(len);
+	if (cp==NULL){
+		logerr("malloc failure\n");
+		return -1;
+	}
+
+	strncpy(cp->devname, conf->device, IFNAMSIZ);
+	loginfo("except count:%d\n", conf->except_count);
+	cp->e_count = conf->except_count;
+	memcpy(cp->es, conf->except, cp->e_count*sizeof(struct e_address));
+
+        ret = setsockopt(sock, IPPROTO_IP, CONN_SO_SET_PARAMS, cp, len);
+        if (ret != 0) {
+                logerr("setsockopt(CONN_SO_SET_PARAMS) failed\n");
+		free(cp);
+                return -1;
+        }
+
+	loginfo("before cp free\n");
+	free(cp);
+	loginfo("after cp free\n");
 
 	s = drcom_get_session_info(h);
-	authlen = sizeof(struct drcom_auth_data);
 
-	/* struct drcom_auth is already packed, so no worries here */
-	memcpy(auth_data.auth, s->auth, authlen);
-
-	/* memset(drcom_iface_data, 0, 4 * sizeof(struct addrport)); */
-
-	iface_data.hostip = s->hostip;
-	iface_data.hostport = s->hostport;
-	iface_data.servip = s->servip;
-	iface_data.servport = s->servport;
-	iface_data.dnsp = s->dnsp;
-	iface_data.dnss = s->dnss;
-
-	/* memset(drcom_except_data, 0, 20 * sizeof(struct addrmask)); */
-
-	except_data[0].addr = 0;
-	except_data[0].mask = 0;
-
-	/* Actually write to the files */
-
-	f = fopen(DRCOM_MODULE_AUTH, "w");
-	if (!f) {
-		logerr("Writing authentication data: %s", strerror(errno));
-		return;
-	}
-	r = fwrite(&auth_data, sizeof(struct drcom_auth_data), 1, f);
-	if (r == 0 && ferror(f)) {
-		logerr("Writing to " DRCOM_MODULE_AUTH ": %s", strerror(errno));
-		return;
-	}
-	fclose(f);
-
-	f = fopen(DRCOM_MODULE_IFACE, "w");
-	if (!f) {
-		logerr("Writing interface info: %s", strerror(errno));
-		return;
-	}
-	r = fwrite(&iface_data, sizeof(struct drcom_iface_data), 1, f);
-	if (r == 0 && ferror(f)) {
-		logerr("Writing to " DRCOM_MODULE_IFACE ": %s", strerror(errno));
-		return;
-	}
-	fclose(f);
-
-	f = fopen(DRCOM_MODULE_EXCEPT, "w");
-	if (!f) {
-		logerr("Writing exceptions: %s", strerror(errno));
-		return;
-	}
-	r = fwrite(&except_data, sizeof(struct drcom_except_data), MAX_EXCEPT_ITEMS, f);
-	if (r == 0 && ferror(f)) {
-		logerr("Writing to " DRCOM_MODULE_EXCEPT ": %s", strerror(errno));
-		return;
-	}
-	fclose(f);
-
+        cmd.cmd = CONN_MODE_AUTH;
+	cmd.pid = getpid();
+	cmd.autologout = conf->autologout;
+	memcpy(cmd.auth_data, s->auth, sizeof(struct drcom_auth_data));
 	{
-		pid_t pid = getpid();
-
-		f = fopen(DRCOM_MODULE_PID, "w");
-		if (!f) {
-			logerr("Writing pid info " DRCOM_MODULE_PID ": %s", strerror(errno));
-			return;
+		int i;
+		loginfo("AUTH DATA: \n ");
+		for(i=0;i<sizeof(struct drcom_auth_data);i++){
+			loginfo("%2X ", cmd.auth_data[i]);
 		}
-		r = fwrite(&pid, sizeof(pid_t), 1, f);
-		if (r == 0 && ferror(f)) {
-			logerr("Writing to " DRCOM_MODULE_PID ": %s", strerror(errno));
-			return;
-		}
-		fclose(f);
+		loginfo("\n");
 	}
 
-	{
-	struct drcom_conf *conf = (struct drcom_conf*)h->conf;
-	char al = conf->autologout?'1':'0';
+        ret = setsockopt(sock, IPPROTO_IP, CONN_SO_SET_AUTH_CMD, &cmd, sizeof(struct conn_auth_cmd));
+        if (ret != 0) {
+                logerr("CONN_SO_SET_AUTH_CMD failed\n");
+                return -1;
+        }
 
-	f = fopen(DRCOM_MODULE_AUTOLOGOUT, "w");
-	if (!f) {
-		logerr("Writing " DRCOM_MODULE_AUTOLOGOUT ": %s", strerror(errno));
-		return;
-	}
-	r = fwrite(&al, sizeof(char), 1, f);
-	if (r == 0 && ferror(f)) {
-		logerr("Writing " DRCOM_MODULE_AUTOLOGOUT ": %s", strerror(errno));
-		return;
-	}
-	fclose(f);
-	}
+	loginfo("daemon: Started authentication\n");
 
-	/* Now tell drcom.o to start authenticating */
-
-	status_data.status = STATUS_LOGIN;
-
-	f = fopen(DRCOM_MODULE_STATUS, "w");
-	if (!f) {
-		logerr("Starting authentication: %s", strerror(errno));
-		return;
-	}
-	r = fwrite(&status_data, sizeof(struct drcom_status_data), 1, f);
-	if (r == 0 && ferror(f)) {
-		logerr("Writing to " DRCOM_MODULE_STATUS ": %s", strerror(errno));
-		return;
-	}
-	fclose(f);
-
-	return;
+	return 0;
 }
 
-void module_stop_auth(void)
+int module_stop_auth(void)
 {
-	struct drcom_status_data status_data;
-	FILE *f;
-	int r;
+	int sock;
+        struct conn_auth_cmd cmd;
+	int ret;
 
-	status_data.status = STATUS_NOTLOGIN;
-
-	f = fopen(DRCOM_MODULE_STATUS, "w");
-	if (!f) {
-		logerr("Stopping authentication: %s", strerror(errno));
-		return;
+	sock = socket(PF_INET, SOCK_DGRAM, 0);
+	if (sock < 0){
+		logerr("socket create failure\n");
+		return -1;
 	}
 
-	r = fwrite(&status_data, sizeof(struct drcom_status_data), 1, f);
-	if (r == 0 && ferror(f)) {
-		logerr("Writing to " DRCOM_MODULE_STATUS ": %s", strerror(errno));
-		return;
-	}
+	cmd.cmd = CONN_MODE_NONE;
+        ret = setsockopt(sock, IPPROTO_IP, CONN_SO_SET_AUTH_CMD, &cmd, sizeof(struct conn_auth_cmd));
+        if (ret != 0) {
+                logerr("CONN_SO_SET_AUTH_CMD failed\n");
+                return -1;
+        }
 
 	loginfo("daemon: Stopped authentication\n");
 
-	fclose(f);
-
-	return;
+	return -1;
 }
 
 

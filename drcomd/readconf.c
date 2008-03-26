@@ -17,6 +17,7 @@
 	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA	02111-1307	USA
 */
 
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,12 +28,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-/*#include <linux/sockios.h>
-#include <linux/if.h>
-*/
 #include "drcomd.h"
 #include "daemon_server.h"
-#include "log.h"
+#include "tcptrack.h"
 
 #include "utils.h"
 
@@ -42,7 +40,7 @@
 	((x >= 'a' && x <= 'z') \
 	|| (x >= 'A' && x <= 'Z') \
 	|| (x >= '0' && x <= '9') \
-	|| (x == '_' || x == '=' || x == '.' || x == ',' || x == ':'))
+	|| (x == '_' || x == '=' || x == '.' || x == ',' || x == ':' || x == '/'))
 
 /*
 	Some kind of checklist:
@@ -79,6 +77,10 @@ int __optval(char *, char *);
 int __parseopt(struct drcom_conf *, char *, struct _opt_checklist *opts);
 int __fillopts(struct drcom_conf *, struct drcom_info *, struct drcom_host *, struct _opt_checklist *);
 
+void init_conf(struct drcom_conf *conf);
+int add_except(struct drcom_conf *conf, u_int32_t ip, u_int32_t mask);
+int get_except(struct drcom_conf *conf, char *buf);
+
 /* _readconf
 	A routine for parsing the config file.
 */
@@ -89,6 +91,8 @@ int _readconf(struct drcom_conf *conf, struct drcom_info *info, struct drcom_hos
 	char buf[__OPTLEN], *s;
 	struct _opt_checklist opts = {0,0,0,0,{0,0,0,0},0,0,0,0,0,0,0,0,0,0,0};
 	int lineno = 0, r = 0;
+
+	init_conf(conf);
 
 	dotconf = fopen(DRCOM_CONF, "r");
 	if (!dotconf)
@@ -103,18 +107,11 @@ int _readconf(struct drcom_conf *conf, struct drcom_info *info, struct drcom_hos
 		r = __parseopt(conf, buf, &opts);
 
 		++lineno;
-		switch(r) {
-		case 0:
-			dbg("Line %d parsed successfully\n", lineno);
-			break;
-		case 1: dbg("Line %d skipped.\n", lineno); break;
-		case 2: logerr("Error processing config file at line %d.\n", lineno);
-			break;
-		default: break;
-		}
 
-		if (r < 0 || r > 1)
+		if (r < 0 || r > 1) {
+			fprintf(stderr, "Error processing config file at line %d.\n", lineno);
 			break;
+		}
 	}
 
 	/* Even if there was an error, we should close the file first */
@@ -124,32 +121,15 @@ int _readconf(struct drcom_conf *conf, struct drcom_info *info, struct drcom_hos
 		return -1;
 
 	r = __fillopts(conf, info, host, &opts);
-#ifdef DEBUG_CONF
-	dbg("username: %s\n", info->username);
-	dbg("password: %s\n", info->password);
-	dbg("mac: %02x:%02x:%02x:%02x:%02x:%02x\n", info->mac[0], info->mac[1],
-		 info->mac[2], info->mac[3], info->mac[4], info->mac[5]);
-	dbg("nic0: %s\n", inet_ntoa(*((struct in_addr *) &(info->nic[0]))));
-	dbg("nic1: %s\n", inet_ntoa(*((struct in_addr *) &(info->nic[1]))));
-	dbg("nic2: %s\n", inet_ntoa(*((struct in_addr *) &(info->nic[2]))));
-	dbg("nic3: %s\n", inet_ntoa(*((struct in_addr *) &(info->nic[3]))));
-	dbg("hostip: %s\n", inet_ntoa(*((struct in_addr *) &(info->hostip))));
-	dbg("servip: %s\n", inet_ntoa(*((struct in_addr *) &(info->servip))));
-	dbg("hostport: %d\n", info->hostport);
-	dbg("servport: %d\n", info->servport);
+	if (r) {fprintf(stderr, "fillopts failed\n");goto out;}
+	r = add_except(conf, conf->dnsp, 0xffffffff);
+	if (r) goto out;
+	r = add_except(conf, conf->dnss, 0xffffffff);
 
-	dbg("hostname: %s\n", host->hostname);
-	dbg("dnsp: %s\n", inet_ntoa(*((struct in_addr *) &(host->dnsp))));
-	dbg("dhcp: %s\n", inet_ntoa(*((struct in_addr *) &(host->dhcp))));
-	dbg("dnss: %s\n", inet_ntoa(*((struct in_addr *) &(host->dnss))));
-	dbg("winver_major: %d\n", host->winver_major);
-	dbg("winver_minor: %d\n", host->winver_minor);
-	dbg("winver_build: %d\n", host->winver_build);
-	dbg("servicepack: %s\n", host->servicepack);
-#endif
+out:
 	if (r)
 	{
-		logerr("Error digesting configuration!\n");
+		fprintf(stderr, "Error digesting configuration!\n");
 		return -1;
 	}
 
@@ -235,6 +215,76 @@ int __optval(char *buf, char *optval)
 	return len;
 }
 
+void init_conf(struct drcom_conf *conf)
+{
+	memset(conf, 0, sizeof(struct drcom_conf));
+}
+
+#define NIPQUAD(addr) \
+        ((unsigned char *)&addr)[0], \
+        ((unsigned char *)&addr)[1], \
+        ((unsigned char *)&addr)[2], \
+        ((unsigned char *)&addr)[3]
+
+int add_except(struct drcom_conf *conf, u_int32_t ip, u_int32_t mask)
+{
+	static unsigned int bufsize = 0;
+
+	if (conf->except == NULL){
+		bufsize = 32*sizeof(struct e_address);
+		conf->except_count = 0;
+		conf->except = (struct e_address *)malloc(bufsize);
+		if (conf->except == NULL){
+			return -1;
+		}
+	}
+	if (bufsize == conf->except_count*sizeof(struct e_address)) {
+		bufsize *= 2;
+		conf->except = (struct e_address *)realloc(conf->except, bufsize);
+		if (conf->except == NULL){
+			return -1;
+		}
+	}
+	conf->except[conf->except_count].addr = ip;
+	conf->except[conf->except_count].mask = mask;
+	conf->except_count++;
+
+	return 0;
+}
+
+int get_except(struct drcom_conf *conf, char *buf)
+{
+	struct in_addr ip, mask;
+	char *t, *p, *m;
+
+	p = buf;
+	while (*p != '\0') {
+		t = strchr(p, ',');
+		if (t == NULL)
+			t = p+strlen(p);
+		else {
+			*t = '\0';
+			t++;
+		}
+	
+		m = strchr(p, '/');
+		if (m == NULL)
+			return -1;
+		*m = '\0';
+		m++;
+	
+		if (!inet_pton(AF_INET, p, &ip) || !inet_pton(AF_INET, m, &mask))
+			return -1;
+	
+		if (add_except(conf, ip.s_addr, mask.s_addr)!=0)
+			return -1;
+	
+		p = t;
+	} 
+
+	return 0;
+}
+
 int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 {
 /* define them here because they are __parseopt()-specific */
@@ -288,6 +338,18 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 		strncpy(conf->password, optval, 16);
 		opts->password = 1; goto ok;
 	}
+	else if (__isopt("except", 6)) {
+		if (optval_len == 0) goto ok;
+		else {
+			int r = get_except(conf, optval);
+			if (r==0)
+				goto ok;
+			else{
+				fprintf(stderr, "except list error\n");
+				goto err;
+			}
+		}
+	}
 	else if (__isopt("device", 6))
 	{
 		if (optval_len == 0) { goto ok; }
@@ -299,13 +361,13 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 
 			s = socket (AF_INET, SOCK_DGRAM, 0);
 			if (s == -1) {
-				logerr("Cannot Create DGRAM socket to get device address\n");
+				fprintf(stderr, "Cannot Create DGRAM socket to get device address\n");
 				goto err;
 			}
 			strncpy(ifr.ifr_name, optval, IFNAMSIZ);
 			r = ioctl(s, SIOCGIFHWADDR, &ifr);
 			if (r != 0) {
-				logerr("Cannot get device mac address\n");
+				fprintf(stderr, "Cannot get device mac address\n");
 				close(s);
 				goto err;
 			}
@@ -315,7 +377,7 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 			strncpy(ifr.ifr_name, optval, IFNAMSIZ);
 			r = ioctl(s, SIOCGIFADDR, &ifr);
 			if (r != 0) {
-				logerr("Cannot get device mac address\n");
+				fprintf(stderr, "Cannot get device mac address\n");
 				close(s);
 				goto err;
 			}
@@ -502,8 +564,10 @@ int __fillopts(struct drcom_conf *conf, struct drcom_info *info, struct drcom_ho
 
 	if (opts->dev == 1)
 		memcpy(info->device, conf->device, IFNAMSIZ);
-	else
+	else {
+		fprintf(stderr, "device not specified\n");
 		return -1;
+	}
 
 	if (opts->mac == 1)
 		memcpy(info->mac, conf->mac, 6);

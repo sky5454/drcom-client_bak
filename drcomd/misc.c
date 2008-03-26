@@ -53,6 +53,8 @@ struct drcom_handle *drcom_create_handle(void)
 int drcom_destroy_handle(struct drcom_handle *h)
 {
 	/* FIXME: check NULL pointer */
+	if (h->conf && h->conf->except != NULL)
+		free(h->conf->except);
 	free(h->conf);
 	free(h->socks);
 	free(h->info);

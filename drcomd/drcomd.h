@@ -58,6 +58,8 @@ struct drcom_conf
   u_int32_t winver_build;
   char servicepack[32];
   int  autologout;
+  int except_count;
+  struct e_address *except;
 };
 
 struct drcom_socks
@@ -137,8 +139,8 @@ extern void sigusr1_handler (int);
 extern int setup_sig_handlers(void);
 extern void do_signals(struct drcom_handle *, int);
 
-extern void module_start_auth(struct drcom_handle *);
-extern void module_stop_auth(void);
+extern int module_start_auth(struct drcom_handle *);
+extern int module_stop_auth(void);
 
 extern int drcom_logout(int, struct drcom_handle *, int);
 
