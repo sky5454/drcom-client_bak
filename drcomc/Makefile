@@ -1,9 +1,9 @@
-TOPSRCDIR ?= ..
-DESTDIR ?= $(HOME)/bin
+DESTDIR ?= /usr/local/bin
 
 CC = gcc
-WARN = -Wall -W -Wstrict-prototypes -Wmissing-prototypes -pedantic
-INCLUDE = -I$(TOPSRCDIR)/include
+#WARN = -Wall -W -Wstrict-prototypes -Wmissing-prototypes -pedantic
+WARN = -Wall
+INCLUDE = -I../include
 OPTIMIZE = -O2
 CFLAGS = $(WARN) $(INCLUDE) $(OPTIMIZE)
 
@@ -16,13 +16,21 @@ SRCS = drcomc.c ../utils/utils.c
 all: $(BINS)
 
 clean:
-	rm -f $(BINS) $(OBJS)
+	@echo "  CLEAN drcomc"
+	@rm -f $(BINS) $(OBJS)
 
 install: $(BINS)
-	mkdir -p $(DESTDIR)
-	install -m 755 drcomc $(DESTDIR)
+	@echo "  INSTALL drcomc"
+	@mkdir -p $(DESTDIR)
+	@install -m 755 drcomc $(DESTDIR)
 
 drcomc: $(OBJS)
+	@echo "  LD drcomc"
+	@$(CC) -o $@ $^ $(LDFLAGS)
 
-drcomc.o: $(TOPSRCDIR)/include/client_daemon.h
+drcomc.o: ../include/client_daemon.h
+
+.c.o:
+	@echo "  CC $<"
+	@$(CC) -c -o $@ $< $(CFLAGS)
 

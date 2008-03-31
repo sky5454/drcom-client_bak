@@ -118,21 +118,9 @@ static void _build_login_packet(struct drcom_login_packet *login_packet,
 	return;
 }
 
-static void _build_authentication(struct drcom_auth *auth, struct drcom_acknowledgement *acknowledgement)
+static inline void _build_authentication(struct drcom_auth *auth, struct drcom_acknowledgement *acknowledgement)
 {
 	memcpy(auth, &acknowledgement->auth_info, sizeof(struct drcom_auth));
-        {
-                int i;
-		unsigned char *ap = (unsigned char*)auth;
-                loginfo("AUTH DATA: \n ");
-                for(i=0;i<sizeof(struct drcom_auth);i++){
-                        loginfo("%2X ", ap[i]);
-                }
-                loginfo("\n");
-        }
-
-
-	return;
 }
 
 static void _build_keepalive(struct drcom_host_msg *keepalive, struct drcom_login_packet *login_packet, struct drcom_acknowledgement *acknowledgement)
@@ -259,10 +247,7 @@ void do_command_login(int s2, struct drcom_handle *h)
 
 	recv_initial_server_msg(h);
 
-	logerr("before module_start_auth\n");
-
 	module_start_auth(h);
-	logerr("after module_start_auth\n");
 
 	pthread_create(&th_watchport,NULL,daemon_watchport, h);
 	pthread_create(&th_keepalive,NULL,daemon_keepalive, h);

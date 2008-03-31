@@ -1,53 +1,40 @@
-#ifndef DAEMON_KERNEL_H_
-#define DAEMON_KERNEL_H_
+#ifndef _TCPTRACK_H_
+#define _TCPTRACK_H_
 
-#include <linux/types.h>
+#include <linux/if.h>
 
-/* I've got a feeling we don't need to pack the structures...
-   So they're not packed for now */
+#define CONN_SO_BASE_CTL	(64+2048+64)
 
-struct drcom_status_data
+#define CONN_SO_SET_AUTH_CMD	CONN_SO_BASE_CTL
+#define CONN_SO_SET_PARAMS	(CONN_SO_BASE_CTL+1)
+#define CONN_SO_SET_MAX		CONN_SO_SET_PARAMS
+
+#define CONN_MODE_NONE		0
+#define CONN_MODE_AUTH 		1
+
+#define CONN_AUTH_DATA_LEN	16
+
+struct e_address
 {
-#define STATUS_NOTLOGIN '0'
-#define STATUS_LOGIN '1'
-  uint8_t status;
+	u_int32_t	addr;
+	u_int32_t	mask;
 };
 
-struct drcom_auth_data
+struct conn_param
 {
-  uint8_t auth[16];
+	char			devname[IFNAMSIZ];
+
+	int			e_count;
+	struct e_address	es[0];
 };
 
-struct drcom_iface_data
+struct conn_auth_cmd
 {
-  uint32_t hostip;
-  uint16_t hostport;
-  uint32_t servip;
-  uint16_t servport;
-  uint32_t dnsp;
-  uint32_t dnss;
+	int 		cmd;
+	pid_t		pid;
+	int		autologout;
+	unsigned char	auth_data[CONN_AUTH_DATA_LEN];
 };
-
-struct drcom_except_data
-{
-  uint32_t addr;
-  uint32_t mask;
-};
-
-#define MAX_EXCEPT_ITEMS 20
-#define MAX_EXCEPT_LEN (sizeof(struct drcom_except_data) * MAX_EXCEPT_ITEMS)
-
-/* The module name */
-#define DRCOM_MODULE "drcom"
-
-/* Files used by the module */
-#define DRCOM_MODULE_PATH "/proc/drcom"
-#define DRCOM_MODULE_STATUS DRCOM_MODULE_PATH"/status"
-#define DRCOM_MODULE_AUTH DRCOM_MODULE_PATH"/auth"
-#define DRCOM_MODULE_IFACE DRCOM_MODULE_PATH"/iface"
-#define DRCOM_MODULE_EXCEPT DRCOM_MODULE_PATH"/except"
-#define DRCOM_MODULE_PID DRCOM_MODULE_PATH"/pid"
-#define DRCOM_MODULE_AUTOLOGOUT DRCOM_MODULE_PATH"/autologout"
 
 #endif
 

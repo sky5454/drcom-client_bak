@@ -5,7 +5,6 @@
 
 #include "drcomd.h"
 #include "daemon_kernel.h"
-#include "tcptrack.h"
 
 #include "log.h"
 
@@ -32,7 +31,6 @@ int module_start_auth(struct drcom_handle *h)
 	}
 
 	strncpy(cp->devname, conf->device, IFNAMSIZ);
-	loginfo("except count:%d\n", conf->except_count);
 	cp->e_count = conf->except_count;
 	memcpy(cp->es, conf->except, cp->e_count*sizeof(struct e_address));
 
@@ -43,24 +41,14 @@ int module_start_auth(struct drcom_handle *h)
                 return -1;
         }
 
-	loginfo("before cp free\n");
 	free(cp);
-	loginfo("after cp free\n");
 
 	s = drcom_get_session_info(h);
 
         cmd.cmd = CONN_MODE_AUTH;
 	cmd.pid = getpid();
 	cmd.autologout = conf->autologout;
-	memcpy(cmd.auth_data, s->auth, sizeof(struct drcom_auth_data));
-	{
-		int i;
-		loginfo("AUTH DATA: \n ");
-		for(i=0;i<sizeof(struct drcom_auth_data);i++){
-			loginfo("%2X ", cmd.auth_data[i]);
-		}
-		loginfo("\n");
-	}
+	memcpy(cmd.auth_data, s->auth, sizeof(struct drcom_auth));
 
         ret = setsockopt(sock, IPPROTO_IP, CONN_SO_SET_AUTH_CMD, &cmd, sizeof(struct conn_auth_cmd));
         if (ret != 0) {
@@ -68,7 +56,7 @@ int module_start_auth(struct drcom_handle *h)
                 return -1;
         }
 
-	loginfo("daemon: Started authentication\n");
+	loginfo("daemon: Starting authentication...\n");
 
 	return 0;
 }
@@ -92,7 +80,7 @@ int module_stop_auth(void)
                 return -1;
         }
 
-	loginfo("daemon: Stopped authentication\n");
+	loginfo("daemon: Stopping authentication...\n");
 
 	return -1;
 }

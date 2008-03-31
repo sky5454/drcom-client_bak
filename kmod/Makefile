@@ -5,16 +5,14 @@ ifneq ($(KERNELRELEASE),)
 
 obj-m	:= drcom.o
 
+EXTRA_CFLAGS := -I$(src)/../include
+
 else
 
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 PWD       := $(shell pwd)
 
-all: default app
-
-app: start stop
-
-start stop: tcptrack.h
+all: default
 
 default:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
@@ -26,7 +24,7 @@ install:
 endif
 
 clean:
-	rm -rf *.o
-	rm -rf *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions *.symvers
-	rm -rf start stop
+	@echo "  CLEAN kmod"
+	@rm -rf *.o
+	@rm -rf *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions *.symvers
 

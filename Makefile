@@ -6,19 +6,18 @@ export TOPSRCDIR DESTDIR
 SUBDIRS = drcomc drcomd kmod 
 
 .PHONY: all clean install
-.PHONY: $(SUBDIRS) $(SUBDIRS:%=%-clean) $(SUBDIRS:%=%-install)
 
-all: $(SUBDIRS)
+all:
+	@for x in $(SUBDIRS); do (cd $$x && make all) || exit 1; done
 
-$(SUBDIRS):
-	$(MAKE) -C $@
+clean:
+	@for x in $(SUBDIRS); do (cd $$x && make clean) || exit 1; done
 
-clean: $(SUBDIRS:%=%-clean)
-
-$(SUBDIRS:%=%-clean):
-	$(MAKE) -C $(@:%-clean=%) clean
-
-install: $(SUBDIRS:%=%-install)
+install:
+	@for x in $(SUBDIRS); do (cd $$x && make install) || exit 1; done
+	@echo
+	@echo
+	@echo
 	@if [ -a /etc/drcom.conf ]; then \
 		echo "====================================" && \
 		echo "" && \
@@ -37,7 +36,5 @@ install: $(SUBDIRS:%=%-install)
 		echo "====================================" \
 		;\
 	fi
-
-$(SUBDIRS:%=%-install):
-	$(MAKE) -C $(@:%-install=%) install
+	@echo
 

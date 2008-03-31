@@ -1,10 +1,10 @@
 
-TOPSRCDIR ?= ..
-DESTDIR ?= $(HOME)/bin
+DESTDIR ?= /usr/local/bin
 
 CC = gcc
-WARN = -Wall -W -Wstrict-prototypes -Wmissing-prototypes -pedantic
-INCLUDE = -I$(TOPSRCDIR)/include
+#WARN = -Wall -W -Wstrict-prototypes -Wmissing-prototypes -pedantic
+WARN = -Wall
+INCLUDE = -I../include
 OPTIMIZE = -g
 CFLAGS = $(WARN) $(INCLUDE) $(OPTIMIZE) 
 LDFLAGS = -lm -lpthread
@@ -19,13 +19,21 @@ INCS = log.h
 all: $(BINS)
 
 clean:
-	rm -f $(BINS) $(OBJS)
+	@echo "  CLEAN drcomd"
+	@rm -f $(BINS) $(OBJS)
 
 install: $(BINS)
-	mkdir -p $(DESTDIR)
-	install -m 700 drcomd $(DESTDIR)
+	@echo "  INSTALL drcomd"
+	@mkdir -p $(DESTDIR)
+	@install -m 700 drcomd $(DESTDIR)
 
 drcomd: $(OBJS)
+	@echo "  LD drcomd"
+	@$(CC) -o $@ $^ $(LDFLAGS)
 
-drcomd.o: log.h
+$(OBJS): drcomd.h log.h md5.h ../include/daemon_kernel.h ../include/client_daemon.h ../include/daemon_server.h  ../include/utils.h
+
+.c.o:
+	@echo "  CC $<"
+	@$(CC) -c -o $@ $< $(CFLAGS)
 

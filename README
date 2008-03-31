@@ -2,110 +2,76 @@
 				README
 				------
 
-Note: any comments please goto wheelz at <kernel.zeng@gmail.com>
-
-This program is for linux with recent kernel versions(2.6~).
-More detailed info refer to the Overview section below.
-
-This program cannot run under *BSD, because we have a kernel module.
-linux kernel modules are quite different with BSD kernel modules.
-A specific BSD kernel module is needed to run under BSD.
-
-This program is based on drcomsuite-0.1.12 and libdrcom-0.0-20050423-2
-written by William Poetra Yoga Hadisoeseno. You could take this program
-as a version of upgrading/bug fixing/feature enhancement, etc.
-
-But please note that this program is not dependent on drcomsuite
-and libdrcom, which means drcomsuite and libdrcom are not needed.
-
-Please refer to README-old to get some information of drcom.
-Please refer to THANKS to thank people contributed a lot for the program.
-
-This program is covered by GPL v2. Please refer to COPYING.
+Note: this file is encoded in UTF-8
+      any comments please goto wheelz at <kernel.zeng@gmail.com>
 
 
-CHANGES since 1.3.2
--------------------
- o  Added a configuration option "autologout", in /etc/drcom.conf
-    a line of 
-	autologout=1
-    will make the program logout automaticly if no network access in
-    2 minutes. autologout=0 will disable this feature.
+重要变化：
+=========
 
- o  Make this program can accept local connect requests, 
-    which means the local host can act as an server now.
-    well, I have to say this is a bug fix, not a feature.
+从1.4.0开始，/etc/drcom.conf的内容有所变化，增加了device和except两个配置选项，
+mac和nic0选项也不再需要填写。
 
+device指明通往外网的网卡的名字。
+except指明不需要进行用户验证的网络地址（用“网络地址/网络掩码”的形式），
+通常，except应该列出内网的地址。
 
-HACKS you can do :)
------------------
-
-There may be a problem, i.e., when this program is running,
-Some people can not access internal network
-(they have some strange internal network addresses).  
-
-It should be configurable, of course. But for now it is not
-available. Donot blame me, it is due to the old ugly codes.:) 
-
-The exciting thing is that you can hack the code. Just edit
- kmod/except/common.c 
-or 
- kmod/except/private.c
-before you compile this program.
-
-For example, if internal network is 10.98.0.0/255.255.0.0,
-just simply add a line of 
-||op1(op2(10.98.0.0),op2(255.255.0.0))
-
-well, please be cautious, the leading '||' may not be needed 
-if you put this line at the very beginning of the file. 
-The two files are really ugly, aren't they?
-
-
-0. Overview:
-------------
-
-drcomsuite and libdrcom cannot get compiled if your kernel version is recent,
-because newer linux kernel makes inet_stream_ops and inet_dgram_ops const.
-
-Begin with version 1.3, this program use security_ops to hijack 
-security_ops->socket_post_create. So it requires that the kernel compiled
-with CONFIG_SECURITY and CONFIG_SECURITY_NETWORK. I hope all distributions
-open these two options.
-
-There are also some corrections. The source codes of drcomsuite and libdrcom 
-are a bit messy and ugly, and have some bugs. I've tried to clean a bit. 
-Of course, What I have done is just another ugly hack. :) In the long run,
-the whole framework should be rewritten.
-
-Another feather added is the timeout. If there is no network access for 2
-minutes, the program will logout automatically, for saving our money.
+如下例：
+device=eth0
+except=10.0.0.0/255.0.0.0, 192.168.0.0/255.255.0.0, 172.16.0.0/255.240.0.0, 127.0.0.0/255.0.0.0
 
 
 
-1. Compile:
------------
+概述：
+=====
 
+在本程序的1.3.x版本中，我们使用security_ops来截获socket创建的机制，
+来为每个TCP连接加入验证服务器需要的验证信息。
+但是，Linux内核从2.6.24开始，不再EXPORT_SYMBOL(security_ops)，
+因此，我们就不再能够使用这种方法。
+
+从1.4.0开始，我们转而采用netfilter hooks。
+一方面，这个做法避免了以后依赖于内核EXPORT_SYMBOL的困境，
+另一方面，这个做法带来了另外的好处，就是可以使用NAT来共享上网。
+
+本程序基于William Poetra Yoga Hadisoeseno写的drcomsuite-0.1.12以及
+libdrcom-0.0-20050423-2，内核的部分已经完全重写，用户态的程序drcomd和drcomc
+也经过了大幅的修改。未来的工作应该主要在于用户态程序的清理，包括整个程序的
+framework。
+
+请注意，本程序现在已经不依赖于drcomsuite和libdrcom，也就是说，您不需要下载这两个包。
+
+请参考README-old来获取有关drcom的信息。
+请参考THANKS来感谢曾经为drcom作出过贡献的人们。
+
+本程序版权采用GPL v2，请参考COPYING。
+
+
+
+编译和安装：
+===========
+
+$ tar xzvf drcom-x.x.x.tar.gz
+$ cd drcom-x.x.x
 $ make
+$ sudo make install
+
+然后，您可能需要编辑一下/etc/drcom.conf
 
 
-2. Install:
------------
 
-run as root the following command.
+使用：
+=====
 
-# make install
-
-... edit /etc/drcom.conf ...
-
-
-3. Run:
--------
+1) 启动drcomd
 
 $ sudo drcomd
-$ sudo drcomc login
 
-...web surfing...
+2) 登录
 
-$ sudo drcomc logout
+$ drcomc login
+
+3) 退出
+
+$ drcomc logout
 
