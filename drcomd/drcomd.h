@@ -159,11 +159,17 @@ extern int drcom_destroy_handle(struct drcom_handle *);
 extern struct drcom_session_info *drcom_get_session_info(struct drcom_handle *);
 extern int drcom_init(struct drcom_handle *);
 
+extern int add_except(struct drcom_conf *conf, u_int32_t ip, u_int32_t mask);
 extern int _readconf(struct drcom_conf *, struct drcom_info *, struct drcom_host *);
 
 extern int _send_dialog_packet(struct drcom_socks *, void *, u_int16_t);
-extern int _recv_dialog_packet(struct drcom_socks *, void *, u_int16_t);
+extern int _recv_dialog_packet(struct drcom_socks *, unsigned char **, int *);
 
+#define NIPQUAD(addr) \
+        ((unsigned char *)&addr)[0], \
+        ((unsigned char *)&addr)[1], \
+        ((unsigned char *)&addr)[2], \
+        ((unsigned char *)&addr)[3]
 
 #endif
 

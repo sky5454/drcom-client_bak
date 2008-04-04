@@ -46,7 +46,7 @@
 
 	If an unexpected packet is recv'ed, we just ignore it.
 */
-
+#if 0
 static void dump_packet(unsigned char *pkt, int len)
 {
 	char left[64];
@@ -81,6 +81,7 @@ static void dump_packet(unsigned char *pkt, int len)
 		loginfo("%s  %s\n", left, right);
 	}
 }
+#endif
 
 int _send_dialog_packet(struct drcom_socks *socks, void *buf, uint16_t type)
 {
@@ -130,20 +131,15 @@ int _send_dialog_packet(struct drcom_socks *socks, void *buf, uint16_t type)
 	return 0;
 }
 
-int _recv_dialog_packet(struct drcom_socks *socks, void *buf, uint16_t type)
+int _recv_dialog_packet(struct drcom_socks *socks, unsigned char **pkt, int *pkt_size)
 {
 	unsigned char *p=NULL;
 	fd_set readfds;
-	int len, r;
-	uint16_t recv_type;
-	int pkt_size;
+	int r;
+	int size;
 
-        switch (type) {
-        case PKT_CHALLENGE: len = sizeof(struct drcom_challenge); break;
-        case PKT_ACK_SUCCESS:
-        case PKT_ACK_FAILURE: len = sizeof(struct drcom_acknowledgement); break;
-        default: return -2; break;
-        }
+	*pkt = NULL;
+	*pkt_size = 0;
 
 	while(1){
 		struct timeval t;
@@ -158,7 +154,7 @@ int _recv_dialog_packet(struct drcom_socks *socks, void *buf, uint16_t type)
 			if(errno == EINTR)
 				continue;
 			logerr("select() returned negative(errno=%d)\n", errno);
-			return -1;
+			return r;
 		}
 		if(r==0){
 			logerr("select() timeout\n");
@@ -168,73 +164,35 @@ int _recv_dialog_packet(struct drcom_socks *socks, void *buf, uint16_t type)
 		if(!FD_ISSET(socks->sockfd, &readfds))
 			continue;
 
-		r = ioctl(socks->sockfd, FIONREAD, &pkt_size);
+		r = ioctl(socks->sockfd, FIONREAD, &size);
 		if(r != 0){
 	                logerr("_recv_dialog_packet: ioctl()");
 			return -1;
 		}
-		if(pkt_size == 0)
+		if(size == 0)
 			continue;
 
-		p = (unsigned char*)malloc(pkt_size);
+		p = (unsigned char*)malloc(size);
 		if (p==NULL){
 			logerr("malloc failed\n");
 			return -1;
 		}
 
 		addrlen = sizeof(struct sockaddr);
-		r = recvfrom(socks->sockfd, p, pkt_size, 0,
+		r = recvfrom(socks->sockfd, p, size, 0,
 			(struct sockaddr *) &socks->servaddr_in,
 	 		(unsigned int *) &addrlen);
 
 		if (r < 0){
 			logerr("recvfrom: %s\n", strerror(errno));
 			free(p);
-			return -1;
+			return r;
 		}
 
-		if(len > pkt_size)
-			len = pkt_size;
+		*pkt = p;
+		*pkt_size = size;
 
-		memcpy(buf, p, len);
-
-		/* FIXME: check len */
-		break;
+		return 0;
 	}
-
-	recv_type = *((uint16_t*)buf);
-
-	switch(recv_type){
-	case PKT_CHALLENGE:
-		loginfo("recv: PKT_CHALLENGE\n");
-		break;
-
-	case PKT_ACK_SUCCESS:
-		loginfo("recv: PKT_ACK_SUCCESS\n");
-		break;
-
-	case PKT_ACK_FAILURE:
-		loginfo("recv: PKT_ACK_FAILURE\n");
-		break;
-
-	default:
-		/* If we got here, it means we encountered an unknown packet */
-		loginfo("recved unknown server packet\n");
-		dump_packet(p, pkt_size);
-		break;
-	}
-
-	if(p)
-		free(p);
-
-	if(type == PKT_CHALLENGE){
-		if(recv_type == PKT_CHALLENGE)
-			return r;
-		else
-			return -1;
-	}else if(recv_type == PKT_ACK_SUCCESS || recv_type == PKT_ACK_FAILURE)
-		return r;
-	
-	return -1;
 }
 

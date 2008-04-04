@@ -27,6 +27,7 @@ int module_start_auth(struct drcom_handle *h)
 	cp = (struct conn_param *)malloc(len);
 	if (cp==NULL){
 		logerr("malloc failure\n");
+		close(sock);
 		return -1;
 	}
 
@@ -37,6 +38,7 @@ int module_start_auth(struct drcom_handle *h)
         ret = setsockopt(sock, IPPROTO_IP, CONN_SO_SET_PARAMS, cp, len);
         if (ret != 0) {
                 logerr("setsockopt(CONN_SO_SET_PARAMS) failed\n");
+		close(sock);
 		free(cp);
                 return -1;
         }
@@ -53,8 +55,11 @@ int module_start_auth(struct drcom_handle *h)
         ret = setsockopt(sock, IPPROTO_IP, CONN_SO_SET_AUTH_CMD, &cmd, sizeof(struct conn_auth_cmd));
         if (ret != 0) {
                 logerr("CONN_SO_SET_AUTH_CMD failed\n");
+		close(sock);
                 return -1;
         }
+
+	close(sock);
 
 	loginfo("daemon: Starting authentication...\n");
 
@@ -77,8 +82,11 @@ int module_stop_auth(void)
         ret = setsockopt(sock, IPPROTO_IP, CONN_SO_SET_AUTH_CMD, &cmd, sizeof(struct conn_auth_cmd));
         if (ret != 0) {
                 logerr("CONN_SO_SET_AUTH_CMD failed\n");
+		close(sock);
                 return -1;
         }
+
+	close(sock);
 
 	loginfo("daemon: Stopping authentication...\n");
 

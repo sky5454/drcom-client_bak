@@ -19,7 +19,6 @@ default:
 
 install:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules_install
-	/sbin/depmod -ae -F $(KERNELDIR)/System.map $(shell uname -r)
 
 endif
 

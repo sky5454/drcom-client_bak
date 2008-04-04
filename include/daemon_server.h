@@ -130,6 +130,12 @@ struct drcom_passwd_packet
 	u_int32_t unknown3;
 } __attribute__ ((__packed__));
 
+struct except_tuple {
+	u_int32_t addr;
+	u_int32_t mask;
+	u_int32_t zero0;
+} __attribute__ ((__packed__));
+
 struct drcom_acknowledgement
 {
 	struct drcom_serv_header serv_header;
@@ -139,14 +145,7 @@ struct drcom_acknowledgement
 	u_int8_t unknown0[10];
 	struct drcom_auth auth_info;
 	u_int8_t unknown1[8];
-
-/* Do we really need to pack this? */
-	struct
-	{
-		u_int32_t addr;
-		u_int32_t mask;
-		u_int32_t zero0;
-	} freeip[3] __attribute__ ((__packed__)); /* or freeip[0] / freeip[1] ? */
+	struct except_tuple tuple[0];
 } __attribute__ ((__packed__));
 
 /* Functions used internally */
@@ -155,8 +154,8 @@ int _getaddr(char *, u_int32_t *);
 
 /* Values for pkt_type */
 
-#define PKT_REQUEST	 	0x0d01
-#define PKT_CHALLENGE	 	0x0d02
+#define PKT_REQUEST	 	0x0001
+#define PKT_CHALLENGE	 	0x0002
 #define PKT_LOGIN		0x0103
 #define PKT_LOGOUT		0x0106
 #define PKT_PASSWORD_CHANGE 	0x0109

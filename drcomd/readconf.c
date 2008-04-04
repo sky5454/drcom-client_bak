@@ -78,7 +78,6 @@ int __parseopt(struct drcom_conf *, char *, struct _opt_checklist *opts);
 int __fillopts(struct drcom_conf *, struct drcom_info *, struct drcom_host *, struct _opt_checklist *);
 
 void init_conf(struct drcom_conf *conf);
-int add_except(struct drcom_conf *conf, u_int32_t ip, u_int32_t mask);
 int get_except(struct drcom_conf *conf, char *buf);
 
 /* _readconf
@@ -219,12 +218,6 @@ void init_conf(struct drcom_conf *conf)
 {
 	memset(conf, 0, sizeof(struct drcom_conf));
 }
-
-#define NIPQUAD(addr) \
-        ((unsigned char *)&addr)[0], \
-        ((unsigned char *)&addr)[1], \
-        ((unsigned char *)&addr)[2], \
-        ((unsigned char *)&addr)[3]
 
 int add_except(struct drcom_conf *conf, u_int32_t ip, u_int32_t mask)
 {

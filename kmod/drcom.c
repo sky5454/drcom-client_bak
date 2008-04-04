@@ -720,7 +720,7 @@ static void conn_do_udp(struct sk_buff *oskb, int (*okfn)(struct sk_buff *))
 	iph = ip_hdr(skb);
 	udph = (void *)iph + ip_hdrlen(skb);
 	memcpy((void *)iph-CONN_AUTH_DATA_LEN, (void*)iph, ip_hdrlen(skb)+8);
-	memcpy(udph+8-CONN_AUTH_DATA_LEN, conn_auth_data, CONN_AUTH_DATA_LEN);
+	memcpy((void*)udph+8-CONN_AUTH_DATA_LEN, conn_auth_data, CONN_AUTH_DATA_LEN);
 
 	skb_push(skb, CONN_AUTH_DATA_LEN);
 	skb_reset_network_header(skb);
@@ -734,7 +734,8 @@ static void conn_do_udp(struct sk_buff *oskb, int (*okfn)(struct sk_buff *))
 	udph->len = htons(len);
 
 	udph->check = 0;
-	udph->check = csum_tcpudp_magic(iph->saddr, iph->daddr, len, IPPROTO_UDP, 0);
+	udph->check = csum_tcpudp_magic(iph->saddr, iph->daddr, len, IPPROTO_UDP, 
+					csum_partial((unsigned char *)udph, len, 0));
 
 	/* ip stuff */
 	iph->tot_len = htons(skb->len);

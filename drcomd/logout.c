@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <pthread.h>
 
 #include "md5.h"
@@ -73,10 +74,13 @@ int drcom_logout(int s2, struct drcom_handle *h, int timeout)
 	struct drcom_socks *socks = (struct drcom_socks *) h->socks;
 	struct drcom_info *info = (struct drcom_info *) h->info;
 	struct drcom_auth *auth = (struct drcom_auth *) h->auth;
-	struct drcom_challenge challenge;
+	struct drcom_challenge *challenge;
 	struct drcom_logout_packet logout_packet;
-	struct drcom_acknowledgement acknowledgement;
+	struct drcom_acknowledgement *acknowledgement;
 	int retry = 0;
+	unsigned char *pkt;
+	int pkt_size;
+	int ret;
 
 	(void)timeout;
 
@@ -85,15 +89,25 @@ try_it_again_1:
 	if(retry > 3)
 		return -1;
 	_send_dialog_packet(socks, NULL, PKT_REQUEST);
-/*	report_daemon_msg(s2, "  PKT_REQUEST --->\n");*/
 
-	if(_recv_dialog_packet(socks, &challenge, PKT_CHALLENGE)<0){
+	ret = _recv_dialog_packet(socks, &pkt, &pkt_size);
+	if (ret < 0 || pkt_size < sizeof(struct drcom_challenge)) {
+		if (pkt)
+			free(pkt);
 		report_daemon_msg(s2, "_recv_dialog_package(PKT_CHALLENGE) failed\n");
 		goto try_it_again_1;
 	}
-/*	report_daemon_msg(s2, "  <--- PKT_CHALLENGE\n");*/
 
-	_build_logout_packet(&logout_packet, info, &challenge, auth);
+	challenge = (struct drcom_challenge *)pkt;
+	if (challenge->serv_header.pkt_type != PKT_CHALLENGE) {
+		free(pkt);
+		report_daemon_msg(s2, "_recv_dialog_package(PKT_CHALLENGE) returned non challenge pkt\n");
+		goto try_it_again_1;
+	}
+
+	_build_logout_packet(&logout_packet, info, challenge, auth);
+
+	free(pkt);
 
 	retry = 0;
 try_it_again_2:
@@ -101,24 +115,29 @@ try_it_again_2:
 	if(retry > 3)
 		return -1;
 	_send_dialog_packet(socks, &logout_packet, PKT_LOGOUT);
-/*	report_daemon_msg(s2, "  PKT_LOGOUT --->\n");*/
 
-	if(_recv_dialog_packet(socks, &acknowledgement, PKT_ACK_SUCCESS)<0){
+	ret = _recv_dialog_packet(socks, &pkt, &pkt_size);
+	if (ret < 0 || pkt_size < sizeof(struct drcom_acknowledgement)) {
+		if (pkt)
+			free(pkt);
 		report_daemon_msg(s2, "_recv_dialog_package(PKT_ACK_SUCCESS) failed\n");
 		goto try_it_again_2;
 	}
 
-	if (acknowledgement.serv_header.pkt_type == PKT_ACK_SUCCESS){
-/*		report_daemon_msg(s2, "  <--- PKT_ACK_SUCCESS\n");*/
-		report_daemon_msg(s2, "Logout Succeeded\n");
-		report_daemon_msg(s2, "You have used %u minutes, and %uK bytes\n", 
-			acknowledgement.time_usage, acknowledgement.vol_usage);
-		return 0;
-	} else{
+	acknowledgement = (struct drcom_acknowledgement *)pkt;
+	if (acknowledgement->serv_header.pkt_type != PKT_ACK_SUCCESS){
 		report_daemon_msg(s2, "Server acknowledged failure\n");
-/*		report_daemon_msg(s2, "  <--- PKT_ACK_FAILURE\n");*/
+		free(pkt);
 		return -1;
 	}
+
+	report_daemon_msg(s2, "Logout Succeeded\n");
+	report_daemon_msg(s2, "You have used %u minutes, and %uK bytes\n", 
+				acknowledgement->time_usage, acknowledgement->vol_usage);
+
+	free(pkt);
+
+	return 0;
 }
 
 void do_command_logout(int s2, struct drcom_handle *h)

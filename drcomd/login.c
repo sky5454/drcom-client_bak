@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <pthread.h>
 
 #include "md5.h"
@@ -132,6 +133,22 @@ static void _build_keepalive(struct drcom_host_msg *keepalive, struct drcom_logi
 	return;
 }
 
+static void add_except_address(struct drcom_handle *h, unsigned char *pkt, int pkt_size)
+{
+	struct drcom_acknowledgement *ack = (struct drcom_acknowledgement *)pkt;
+	struct except_tuple *tuple = ack->tuple;
+	
+	while ((unsigned char *)tuple + sizeof(struct except_tuple) <= pkt + pkt_size) {
+		if (tuple->addr == 0)
+			return;
+		if (tuple->zero0 == 0x00000001)
+			return;
+		add_except(h->conf, tuple->addr, tuple->mask);
+		loginfo("add except:%u.%u.%u.%u/%u.%u.%u.%u\n", NIPQUAD(tuple->addr), NIPQUAD(tuple->mask));
+
+		tuple++;
+	}
+}
 
 static int drcom_login(int s2, struct drcom_handle *h, int timeout)
 {
@@ -141,10 +158,13 @@ static int drcom_login(int s2, struct drcom_handle *h, int timeout)
 	struct drcom_host_msg *response = (struct drcom_host_msg *) h->response;
 	struct drcom_host_msg *keepalive = (struct drcom_host_msg *) h->keepalive;
 	struct drcom_auth *auth = (struct drcom_auth *) h->auth;
-	struct drcom_challenge challenge;
+	struct drcom_challenge *challenge;
 	struct drcom_login_packet login_packet;
-	struct drcom_acknowledgement acknowledgement;
+	struct drcom_acknowledgement *acknowledgement;
 	int retry=0;
+	unsigned char *pkt;
+	int pkt_size;
+	int ret;
 
 	(void)timeout;
 
@@ -156,18 +176,28 @@ try_it_again_1:
 		report_daemon_msg(s2, "_send_dialog_packet(PKT_REQUEST) failed\n");
 		return -1;
 	}
-/*	report_daemon_msg(s2, "  PKT_REQUEST --->\n");*/
 
-	if(_recv_dialog_packet(socks, &challenge, PKT_CHALLENGE)<0){
+	ret = _recv_dialog_packet(socks, &pkt, &pkt_size);
+	if (ret < 0 || pkt_size < sizeof(struct drcom_challenge)) {
+		if (pkt)
+			free(pkt);
 		report_daemon_msg(s2, "_recv_dialog_packet(PKT_CHALLENGE) failed\n");
 		goto try_it_again_1;
 	}
-/*	report_daemon_msg(s2, "  <--- PKT_CHALLENGE\n");*/
+	
+	challenge = (struct drcom_challenge *)pkt;
+	if (challenge->serv_header.pkt_type != PKT_CHALLENGE) {
+		free(pkt);
+		report_daemon_msg(s2, "_recv_dialog_packet(PKT_CHALLENGE) returned non-challenge pkt\n");
+		goto try_it_again_1;
+	}
 
 	/* Now the _real_ ip address of the server is known */
 	info->servip = socks->servaddr_in.sin_addr.s_addr;
 
-	_build_login_packet(&login_packet, info, host, &challenge);
+	_build_login_packet(&login_packet, info, host, challenge);
+
+	free(pkt);
 
 	retry=0;
 try_it_again_2:
@@ -178,29 +208,33 @@ try_it_again_2:
 		report_daemon_msg(s2, "_send_dialog_packet(PKT_LOGIN) failed\n");
 		return -1;
 	}
-/*	report_daemon_msg(s2, "  PKT_LOGIN --->\n");*/
 
-	if(_recv_dialog_packet(socks, &acknowledgement, PKT_ACK_SUCCESS)<0){
+	ret = _recv_dialog_packet(socks, &pkt, &pkt_size);
+	if (ret < 0 || pkt_size < sizeof(struct drcom_acknowledgement)) {
+		if (pkt)
+			free(pkt);
 		report_daemon_msg(s2, "_recv_dialog_packet(PKT_ACK_SUCCESS) failed\n");
 		goto try_it_again_2;
 	}
 
-	if (acknowledgement.serv_header.pkt_type == PKT_ACK_SUCCESS)
-	{
-		_build_authentication(auth, &acknowledgement);
-		_build_keepalive(keepalive, &login_packet, &acknowledgement);
-		memcpy(response, keepalive, sizeof(*keepalive));
-/*		report_daemon_msg(s2, "  <--- PKT_ACK_SUCCESS\n");*/
-		report_daemon_msg(s2, "Login Succeeded\n");
-		report_daemon_msg(s2, "You have used %u Minutes, and %uK bytes\n", 
-			acknowledgement.time_usage, acknowledgement.vol_usage);
-		return 0;
-	}
-	else{
-/*		report_daemon_msg(s2, "  <---  PKT_ACK_FAILURE\n");*/
+	acknowledgement = (struct drcom_acknowledgement *)pkt;
+	if (acknowledgement->serv_header.pkt_type != PKT_ACK_SUCCESS) {
+		free(pkt);
 		report_daemon_msg(s2, "Server acknowledged failure\n");
 		return -1;
 	}
+
+	add_except_address(h, pkt, pkt_size);
+	_build_authentication(auth, acknowledgement);
+	_build_keepalive(keepalive, &login_packet, acknowledgement);
+	memcpy(response, keepalive, sizeof(*keepalive));
+	report_daemon_msg(s2, "Login Succeeded\n");
+	report_daemon_msg(s2, "You have used %u Minutes, and %uK bytes\n", 
+		acknowledgement->time_usage, acknowledgement->vol_usage);
+
+	free(pkt);
+
+	return 0;
 }
 
 static void recv_initial_server_msg(struct drcom_handle *h)
