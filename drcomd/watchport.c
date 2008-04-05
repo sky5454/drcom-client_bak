@@ -130,7 +130,7 @@ static int drcom_watchport(struct drcom_handle *h)
 
 		if (serv_msg->m != 'M')
 		{
-			loginfo("Unknown server packet.\n");
+			loginfo("Unknown server packet(serv_msg->m==%u)\n", serv_msg->m);
 			continue;
 		}
 

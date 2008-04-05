@@ -641,8 +641,11 @@ static struct sk_buff *build_ack_skb(struct sk_buff *oskb)
 
 	skb_trim(skb, (iph->ihl + tcph->doff) * 4);
 
-	skb->csum = 0;
+	skb_shinfo(skb)->gso_segs = 1;
+	skb_shinfo(skb)->gso_size = 0;
+	skb_shinfo(skb)->gso_type = 0;
 	skb->ip_summed = CHECKSUM_NONE;
+	skb->csum = 0;
 
 	tcph->check = 0;
 	tcph->check = tcp_v4_check(tcph->doff << 2, iph->saddr, iph->daddr, 
@@ -675,8 +678,11 @@ static struct sk_buff *build_auth_skb(struct sk_buff *oskb)
 	skb_put(skb, CONN_AUTH_DATA_LEN);
 	memcpy(skb->data + hdrlen, conn_auth_data, CONN_AUTH_DATA_LEN);
 
-	skb->csum = 0;
+	skb_shinfo(skb)->gso_segs = 1;
+	skb_shinfo(skb)->gso_size = 0;
+	skb_shinfo(skb)->gso_type = 0;
 	skb->ip_summed = CHECKSUM_NONE;
+	skb->csum = 0;
 
 	tcph->check = 0;
 	tcph->check = tcp_v4_check(skb->len-ip_hdrlen(skb), iph->saddr, iph->daddr, 
@@ -727,8 +733,11 @@ static void conn_do_udp(struct sk_buff *oskb, int (*okfn)(struct sk_buff *))
 	iph = ip_hdr(skb);
 	udph = (void *)iph + ip_hdrlen(skb);
 
-	skb->csum = 0;
+	skb_shinfo(skb)->gso_segs = 1;
+	skb_shinfo(skb)->gso_size = 0;
+	skb_shinfo(skb)->gso_type = 0;
 	skb->ip_summed = CHECKSUM_NONE;
+	skb->csum = 0;
 
 	len = ntohs(udph->len) + CONN_AUTH_DATA_LEN;
 	udph->len = htons(len);
@@ -826,9 +835,16 @@ static unsigned int preroute_hook(unsigned int hooknum,
 	__refresh_keepalive_timer();
 
 	if (is_udp_packet(skb)) {
+		/* 
+		 * oh, shit, we need not do anything here
+		 */
+		/*
 		conn_do_udp(skb, okfn);
 		read_unlock_bh(&mode_lock);
 		return NF_STOLEN;
+		*/
+		read_unlock_bh(&mode_lock);
+		return NF_ACCEPT;
 	}
 
 	hash = resolve_tcp_conn(skb);
