@@ -44,6 +44,7 @@ struct drcom_conf
   char password[16];
   char device[IFNAMSIZ];
   u_int8_t mac[6];
+  u_int8_t mac0[6];
   u_int32_t nic[4];
   u_int32_t dnsp;
   u_int32_t dnss;

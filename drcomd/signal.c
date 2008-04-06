@@ -122,7 +122,7 @@ void do_signals(struct drcom_handle *h, int sig)
 	}
 
 	if(sig == SIGTERM){
-		loginfo("received SIGTERM, let's exit... ");
+		loginfo("received SIGTERM, let's exit...\n");
 
 		exit(1);
 	}

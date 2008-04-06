@@ -144,8 +144,8 @@ static void add_except_address(struct drcom_handle *h, unsigned char *pkt, int p
 		if (tuple->zero0 == 0x00000001)
 			return;
 		add_except(h->conf, tuple->addr, tuple->mask);
-		loginfo("add except:%u.%u.%u.%u/%u.%u.%u.%u\n", NIPQUAD(tuple->addr), NIPQUAD(tuple->mask));
-
+/*		loginfo("add except:%u.%u.%u.%u/%u.%u.%u.%u\n", NIPQUAD(tuple->addr), NIPQUAD(tuple->mask));
+*/
 		tuple++;
 	}
 }

@@ -56,6 +56,7 @@ struct _opt_checklist
 	u_int8_t password;
 	u_int8_t dev;
 	u_int8_t mac;
+	u_int8_t mac0;
 	u_int8_t nic[4];
 	u_int8_t dnsp;
 	u_int8_t dnss;
@@ -88,8 +89,10 @@ int _readconf(struct drcom_conf *conf, struct drcom_info *info, struct drcom_hos
 {
 	FILE *dotconf;
 	char buf[__OPTLEN], *s;
-	struct _opt_checklist opts = {0,0,0,0,{0,0,0,0},0,0,0,0,0,0,0,0,0,0,0};
+	struct _opt_checklist opts;
 	int lineno = 0, r = 0;
+
+	memset(&opts, 0, sizeof(opts));
 
 	init_conf(conf);
 
@@ -222,6 +225,7 @@ void init_conf(struct drcom_conf *conf)
 int add_except(struct drcom_conf *conf, u_int32_t ip, u_int32_t mask)
 {
 	static unsigned int bufsize = 0;
+	int i;
 
 	if (conf->except == NULL){
 		bufsize = 32*sizeof(struct e_address);
@@ -231,6 +235,13 @@ int add_except(struct drcom_conf *conf, u_int32_t ip, u_int32_t mask)
 			return -1;
 		}
 	}
+
+	for(i=0; i<conf->except_count; i++) {
+		struct e_address *p = conf->except + i;
+		if ((p->addr & p->mask) == (ip & mask))
+			return 0;
+	}
+
 	if (bufsize == conf->except_count*sizeof(struct e_address)) {
 		bufsize *= 2;
 		conf->except = (struct e_address *)realloc(conf->except, bufsize);
@@ -238,6 +249,7 @@ int add_except(struct drcom_conf *conf, u_int32_t ip, u_int32_t mask)
 			return -1;
 		}
 	}
+
 	conf->except[conf->except_count].addr = ip;
 	conf->except[conf->except_count].mask = mask;
 	conf->except_count++;
@@ -288,7 +300,7 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 
 	int len, optname_len, optval_len, r;
 	long int l;
-/*	unsigned int _mac[6];*/
+	unsigned int _mac[6];
 	char optname[256], optval[256];
 	struct in_addr ip = {0};
 
@@ -364,8 +376,8 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 				close(s);
 				goto err;
 			}
-			memcpy(conf->mac, ifr.ifr_hwaddr.sa_data, 6);
-			opts->mac = 1;
+			memcpy(conf->mac0, ifr.ifr_hwaddr.sa_data, 6);
+			opts->mac0 = 1;
 
 			strncpy(ifr.ifr_name, optval, IFNAMSIZ);
 			r = ioctl(s, SIOCGIFADDR, &ifr);
@@ -385,9 +397,6 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 			goto ok;
 		}
 	}
-	else if (__isopt("mac", 3)) goto ok;
-	else if (__optprefix("nic", 3)) goto ok;
-/*
 	else if (__isopt("mac", 3))
 	{
 		if (opts->mac != 0) { opts->mac = 4; goto ok; }
@@ -402,6 +411,8 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 			opts->mac = 1; goto ok;
 		}
 	}
+	else if (__optprefix("nic", 3)) goto ok;
+/*
 	else if (__optprefix("nic", 3))
 	{
 		if (optname_len > 4) goto err;
@@ -564,6 +575,10 @@ int __fillopts(struct drcom_conf *conf, struct drcom_info *info, struct drcom_ho
 
 	if (opts->mac == 1)
 		memcpy(info->mac, conf->mac, 6);
+	else if (opts->mac0 == 1) {
+		memcpy(info->mac, conf->mac0, 6);
+		memcpy(conf->mac, conf->mac0, 6);
+	}
 	else if (opts->mac == 0 || opts->mac == 3)
 		memset(info->mac, 0, 6);
 	else
