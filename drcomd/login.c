@@ -210,7 +210,10 @@ try_it_again_2:
 	}
 
 	ret = _recv_dialog_packet(socks, &pkt, &pkt_size);
-	if (ret < 0 || pkt_size < sizeof(struct drcom_acknowledgement) - 8) {
+
+	report_daemon_msg(s2, "received server ACK(pkt_size=%d)\n", pkt_size);
+
+	if (ret < 0) {
 		if (pkt)
 			free(pkt);
 		report_daemon_msg(s2, "_recv_dialog_packet(PKT_ACK_SUCCESS) failed\n");
