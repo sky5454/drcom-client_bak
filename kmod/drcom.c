@@ -8,6 +8,11 @@
 /*
  * Derived from linux netfilter conntrack codes
  */
+
+#ifndef LINUX_VERSION_CODE
+#include <linux/version.h>
+#endif
+
 #include <linux/module.h>
 #include <linux/kmod.h>
 #include <linux/sched.h>
@@ -23,6 +28,12 @@
 
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25)
+#define nf_proto_csum_replace4	inet_proto_csum_replace4
+#define NF_IP_PRE_ROUTING	NF_INET_PRE_ROUTING
+#define NF_IP_POST_ROUTING	NF_INET_POST_ROUTING
+#endif
 
 #include "daemon_kernel.h"
 
