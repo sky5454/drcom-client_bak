@@ -299,7 +299,6 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 	(strncmp(optname, y, n) == 0 && optname_len == n)
 
 	int len, optname_len, optval_len, r;
-	long int l;
 	unsigned int _mac[6];
 	char optname[256], optval[256];
 	struct in_addr ip = {0};
@@ -485,21 +484,21 @@ int __parseopt(struct drcom_conf *conf, char *buf, struct _opt_checklist *opts)
 	{
 		if (opts->hostport != 0) { opts->hostport = 4; goto ok; }
 		if (optval_len == 0) { opts->hostport = 3; goto ok; }
-		l = strtol(optval, (char **) NULL, 0);
-		if ((l == LONG_MIN || l == LONG_MAX) || l > 0xffff)
-		{ opts->hostport = 2; goto err; }
-		conf->hostport = (u_int16_t) l;
-		opts->hostport = 1; goto ok;
+		conf->hostport = atoi(optval);
+		if (conf->hostport != 0) {
+			opts->hostport = 1; 
+			goto ok;
+		}
 	}
 	else if (__isopt("servport", 8))
 	{
 		if (opts->servport != 0) { opts->servport = 4; goto ok; }
 		if (optval_len == 0) { opts->servport = 3; goto ok; }
-		l = strtol(optval, (char **) NULL, 0);
-		if ((l == LONG_MIN || l == LONG_MAX) || l > 0xffff)
-		{ opts->servport = 2; goto err; }
-		conf->servport = (u_int16_t) l;
-		opts->servport = 1; goto ok;
+		conf->servport = atoi(optval);
+		if (conf->servport != 0) {
+			opts->servport = 1; 
+			goto ok;
+		}
 	}
 	else if (__isopt("hostname", 8))
 	{
