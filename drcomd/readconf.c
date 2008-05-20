@@ -34,7 +34,7 @@
 
 #include "utils.h"
 
-#define __OPTLEN 256
+#define __OPTLEN 4096
 
 #define __istidy(x) \
 	((x >= 'a' && x <= 'z') \
