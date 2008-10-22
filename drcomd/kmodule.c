@@ -90,7 +90,7 @@ int module_stop_auth(void)
 
 	loginfo("daemon: Stopping authentication...\n");
 
-	return -1;
+	return 0;
 }
 
 

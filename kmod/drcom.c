@@ -790,6 +790,10 @@ static int need_auth_output(struct sk_buff *skb)
 
 #define CONN_KEEPALIVE_TIMEOUT	(2*60*HZ)
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27)
+#define kill_proc(pid, sig, priv)	kill_pid(find_vpid(pid), sig, priv)
+#endif
+
 static void keepalive_func(unsigned long ul)
 {
 	read_lock_bh(&mode_lock);

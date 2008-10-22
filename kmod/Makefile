@@ -27,4 +27,5 @@ clean:
 	@echo "  CLEAN kmod"
 	@rm -rf *.o
 	@rm -rf *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions *.symvers
+	@rm -rf *.markers *.order
 

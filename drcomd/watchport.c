@@ -137,7 +137,7 @@ static int drcom_watchport(struct drcom_handle *h)
 		switch (serv_msg->mt)
 		{
 			case '8': 
-				loginfo((char *) serv_msg->msg); 
+				loginfo("%s\n", (char *) serv_msg->msg); 
 				break;
 			case '&': 
 				r = _respond(socks, folded, keepalive_skel, serv_msg->msg);
