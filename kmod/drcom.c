@@ -149,7 +149,7 @@ struct tcp_conn
 #define CONN_F_AUTHSENT	0x02
 
 #define TODO_NONE	0x00
-#define TODO_BYPASS	0x01
+#define TODO_ADJUST_SEQ	0x01
 #define TODO_SEND_ACK	0x02
 #define TODO_SEND_AUTH	0x04
 
@@ -580,6 +580,11 @@ static unsigned int check_tcp_packet(struct sk_buff *skb, struct tcp_tuplehash *
 
 	conn->state = newstate;
 
+	if (conn->flags & CONN_F_AUTHSENT) {
+		todo = TODO_ADJUST_SEQ;
+		goto out;
+	}
+
 	/* Handshake SYN */
 	if (oldtcpstate == TCP_STATE_NONE && dir == CONN_DIR_ORIG && tcph->syn && !tcph->ack) {
 		seq = &conn->seq[dir];
@@ -587,7 +592,8 @@ static unsigned int check_tcp_packet(struct sk_buff *skb, struct tcp_tuplehash *
 		seq->correction_pos = seq->syn_seq;
 		seq->offset_before = 0;
 		seq->offset_after = CONN_AUTH_DATA_LEN;
-		todo |= TODO_BYPASS;
+		todo = TODO_NONE;
+		goto out;
 	}
 
 	/* Handshake SYN-ACK */
@@ -597,15 +603,19 @@ static unsigned int check_tcp_packet(struct sk_buff *skb, struct tcp_tuplehash *
 		seq->correction_pos = seq->syn_seq;
 		seq->offset_before = 0;
 		seq->offset_after = 0;
-		todo |= TODO_BYPASS;
+		todo = TODO_NONE;
+		goto out;
 	}
 
-	/* Handshake pure ACK */
+	/* Handshake pure ACK: we don't care this case actually */
+	/*
 	if (oldtcpstate == TCP_STATE_SYN_RECV && skb->len == hdrlen && dir == CONN_DIR_ORIG 
 		&& tcph->ack && !tcph->syn && ntohl(tcph->ack_seq) == conn->seq[!dir].syn_seq+1)
 	{
-		todo |= TODO_BYPASS;
+		todo = TODO_NONE;
+		goto out;
 	}
+	*/
 
 	/* Handshake ACK with data*/
 	if (oldtcpstate == TCP_STATE_SYN_RECV && skb->len > hdrlen && dir == CONN_DIR_ORIG
@@ -614,21 +624,31 @@ static unsigned int check_tcp_packet(struct sk_buff *skb, struct tcp_tuplehash *
 		    && (ntohl(tcph->seq) == conn->seq[dir].syn_seq+1)
 		    && !(conn->flags & CONN_F_AUTHSENT))
 	{
-		todo |= TODO_SEND_ACK | TODO_SEND_AUTH;
+		todo = TODO_SEND_ACK | TODO_SEND_AUTH | TODO_ADJUST_SEQ;
 		conn->flags |= CONN_F_AUTHSENT;
+		goto out;
 	}
 
 	/* The first data packet */
 	if (oldtcpstate == TCP_STATE_ESTABLISHED && skb->len > hdrlen && dir == CONN_DIR_ORIG
 		    && tcph->ack && !tcph->syn 
-		    && (ntohl(tcph->ack_seq) == conn->seq[!dir].syn_seq+1)
+		/*    && (ntohl(tcph->ack_seq) == conn->seq[!dir].syn_seq+1) *//* ftp server will send first */
 		    && (ntohl(tcph->seq) == conn->seq[dir].syn_seq+1)
 		    && !(conn->flags & CONN_F_AUTHSENT))
 	{
-		todo |= TODO_SEND_AUTH;
+		todo = TODO_SEND_AUTH | TODO_ADJUST_SEQ;
 		conn->flags |= CONN_F_AUTHSENT;
+		goto out;
 	}
 
+	/*
+	 * CONN_F_AUTHSENT not set, 
+	 * and not the case to set CONN_F_AUTHSENT, 
+	 * just bypass
+	 */
+	todo = TODO_NONE;
+
+out:
 	__conn_refresh_timer(conn, tcp_timeouts[newstate]);
 
 	write_unlock_bh(&state_lock);
@@ -851,13 +871,8 @@ static unsigned int preroute_hook(unsigned int hooknum,
 
 	if (is_udp_packet(skb)) {
 		/* 
-		 * oh, shit, we need not do anything here
+		 * we need do nothing here
 		 */
-		/*
-		conn_do_udp(skb, okfn);
-		read_unlock_bh(&mode_lock);
-		return NF_STOLEN;
-		*/
 		read_unlock_bh(&mode_lock);
 		return NF_ACCEPT;
 	}
@@ -868,7 +883,7 @@ static unsigned int preroute_hook(unsigned int hooknum,
 
 	todo = check_tcp_packet(skb, hash);
 
-	if (!(todo & TODO_BYPASS))
+	if (todo & TODO_ADJUST_SEQ)
 		(void)tcp_adjust_seq(skb, hash);
 
 	conn_put(tuplehash_to_conn(hash));
@@ -914,9 +929,6 @@ static unsigned int postroute_hook(unsigned int hooknum,
 
 	todo = check_tcp_packet(skb, hash);
 
-	if (todo & TODO_BYPASS)
-		goto out_put;
-
 	if (todo & TODO_SEND_ACK) {
 		skb2 = build_ack_skb(skb);
 		if (skb2 != NULL)
@@ -929,9 +941,9 @@ static unsigned int postroute_hook(unsigned int hooknum,
 			okfn(skb2);
 	}
 
-	(void)tcp_adjust_seq(skb, hash);
+	if (todo & TODO_ADJUST_SEQ)
+		(void)tcp_adjust_seq(skb, hash);
 
-out_put:
 	conn_put(tuplehash_to_conn(hash));
 
 out_unlock:
