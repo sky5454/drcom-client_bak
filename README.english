@@ -1,0 +1,86 @@
+	README
+
+These English instructions were written by Sridhar Ramasami a foreign
+teacher at Lanzhou Jiaotong University
+on Mar 18 2009 for drcom version 1.4.8.1.
+
+DrCom is a client authentication system used by several universities and
+companies for client login, billing etc.  A windows version is available 
+from the drcom company itself, but no versions for linux is available 
+from them. This is a linux version developed under the GNU license.
+
+The following steps are involved in installing and configuring the
+software to work correctly:
+
+1) Download the latest version of drcom
+
+2) Extract and compile drcom on your machine.  This requires a library
+   called 'build-essential' on your system.  First install this and then
+   proceed with the compilation.
+
+   Below are the required commands:
+
+      $ tar xzvf drcom-x.x.x.tar.gz
+      $ cd drcom-x.x.x
+      $ make
+      $ sudo make install
+
+   In the above replace x.x.x with your version number
+
+3) Change the configuration file /etc/drcom.conf.  This can be done with
+   the command:
+      $ gedit /etc/drcom.conf
+   You will require root or super user status to make changes.  For Ubuntu or
+   similar systems your command instead of the above would then be:
+      $ sudo gedit /etc/drcom.conf
+
+   Following changes are require in the drcom.conf file
+     a) enter the appropriate username and password as supplied by the service
+        provider. for example
+
+        username=sridhar
+        password=ubuntu
+
+     b) enter the appropriat device that will be connecting to the network: for
+        example:
+
+        device=eth0
+
+     c) enter the appropriate dnsp, dnss and dhcp ip addresses: eg:
+
+        except=192.168.22.126/255.255.255.128
+        dnsp=221.7.40.200
+        dnss=202.201.18.68
+        dhcp=
+
+        The 'dhcp' statement is currently not processed.
+
+     d) enter the server ip: eg:
+
+        hostip=
+        servip=196.168.22.126
+
+     e) save the file
+
+4) Log in using the following commands:
+
+        $ sudo drcomd
+        $ drcomc login
+
+   Note: Due to different versions of drcom server, you may not be able to
+   login at the first attempt.  In such cases just repeat the command:
+
+        $ drcomc login
+
+   Also the network wire (if connected physically) should be connected when
+   testing or you will get an error that says there was an error at line 3 
+   of drcom.conf file.
+
+
+5) Logout with
+        $ drcomc logout
+
+In case of questions about the english version of this README please email
+sridharval AT yahoo.com
+
+
