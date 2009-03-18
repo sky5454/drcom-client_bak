@@ -46,14 +46,23 @@ software to work correctly:
 
         device=eth0
 
-     c) enter the appropriate dnsp, dnss and dhcp ip addresses: eg:
+     c) enter the appropriate except, dnsp and dnss ip addresses: eg:
 
         except=192.168.22.126/255.255.255.128
         dnsp=221.7.40.200
         dnss=202.201.18.68
         dhcp=
 
-        The 'dhcp' statement is currently not processed.
+        The 'except' statement is important, it is composed of one or more 
+        following entry, separated by ',': 
+
+		subnet-address/netmask-of-subnet
+
+	It should contain the network address of those subnets which you can 
+        access directly(i.e., no authentication is needed). In most cases, it is 
+        the internal network of your ISP.
+
+        The 'dhcp' statement is currently not processed. 
 
      d) enter the server ip: eg:
 
