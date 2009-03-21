@@ -18,7 +18,7 @@ install:
 	@echo
 	@echo
 	@echo
-	@if [ -a /etc/drcom.conf ]; then \
+	@if [ -f /etc/drcom.conf ]; then \
 		echo "====================================" && \
 		echo "" && \
 		echo "/etc/drcom.conf exists.";\
