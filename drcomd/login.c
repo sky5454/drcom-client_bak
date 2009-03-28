@@ -141,11 +141,13 @@ static void add_except_address(struct drcom_handle *h, unsigned char *pkt, int p
 	while ((unsigned char *)tuple + sizeof(struct except_tuple) <= pkt + pkt_size) {
 		if (tuple->addr == 0)
 			return;
-		if (tuple->zero0 == 0x00000001)
-			return;
-		add_except(h->conf, tuple->addr, tuple->mask);
-/*		loginfo("add except:%u.%u.%u.%u/%u.%u.%u.%u\n", NIPQUAD(tuple->addr), NIPQUAD(tuple->mask));
-*/
+
+		if (tuple->flag == 1 || tuple->flag == 0) {
+			add_except(h->conf, tuple->addr, tuple->mask);
+			if (tuple->flag == 1)
+				return;
+		}
+
 		tuple++;
 	}
 }

@@ -133,7 +133,7 @@ struct drcom_passwd_packet
 struct except_tuple {
 	u_int32_t addr;
 	u_int32_t mask;
-	u_int32_t zero0;
+	u_int32_t flag;
 } __attribute__ ((__packed__));
 
 struct drcom_acknowledgement
