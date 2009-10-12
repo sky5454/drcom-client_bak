@@ -656,6 +656,10 @@ out:
 	return todo;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
+#define skb_dst(skb)	(skb->dst)
+#endif
+
 static struct sk_buff *build_ack_skb(struct sk_buff *oskb)
 {
 	struct iphdr *iph;
@@ -683,7 +687,7 @@ static struct sk_buff *build_ack_skb(struct sk_buff *oskb)
 					csum_partial((char *)tcph, tcph->doff << 2, skb->csum));
 
 	iph->tot_len = htons(skb->len);
-	__ip_select_ident(iph, skb->dst, 0);
+	__ip_select_ident(iph, skb_dst(skb), 0);
 	ip_send_check(iph);
 
 	return skb;
@@ -720,7 +724,7 @@ static struct sk_buff *build_auth_skb(struct sk_buff *oskb)
 					csum_partial((char *)tcph, skb->len-ip_hdrlen(skb), skb->csum));
 
 	iph->tot_len = htons(skb->len);
-	__ip_select_ident(iph, skb->dst, 0);
+	__ip_select_ident(iph, skb_dst(skb), 0);
 	ip_send_check(iph);
 
 	return skb;
