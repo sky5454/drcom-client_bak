@@ -1,0 +1,119 @@
+
+
+			========================================
+			在drcom-client项目中使用 Git, version 3
+			========================================
+
+
+=========
+1. 初始化
+=========
+
+$ git clone ssh://USERNAME@drcom-client.git.sourceforge.net/gitroot/drcom-client/drcom-client my-drcom-client
+$ cd my-drcom-client/
+$ git config user.name "YOUR NAME"
+$ git config user.email "USERNAME@users.sourceforge.net"
+
+以上的命令在本地的目录my-drcom-client/中克隆了一份sourceforge.net上的drcom-client的repository.
+下面就可以在这个本地的repository的基础上进行开发了。
+
+在下面的论述中，我们都假定当前目录是my-drcom-client/
+
+
+
+==============================================
+2. 创建本地的开发分支 my-python-user-mode 分支
+==============================================
+
+在远程的sourceforge的repository上，有一个分支称为python-user-mode，
+这个分支是用于python用户态程序的开发的。
+
+在第一步的克隆过程中，针对这个sourceforge的python-user-mode分支，
+git在本地的repository中，建立了一个remote branch，
+即remotes/origin/python-user-mode，来跟踪sourceforge上的python-user-mode分支。
+
+当我们知道远程repository的python-user-mode有更新时，我们可以用下面这个
+命令来更新本地的remote branch:
+
+$ git fetch origin python-user-mode:remotes/origin/python-user-mode
+
+我们不要在这个remote branch上直接开发，而是要建立一个私有的分支my-python-user-mode，
+在这个分支上开发。用下面这个命令来建立这个私有的tracking branch：
+
+$ git checkout -b my-python-user-mode remotes/origin/python-user-mode
+
+此时，我们已经建立了自己的tracking branch，即my-python-user-mode，
+并且已经切换到该分支上。现在可以在这个分支上进行开发工作了。
+
+....do works....
+
+my-python-user-mode分支的工作完成以后，首先commit到本地的repository中去，
+如果需要，还可以用git tag标记版本号。
+
+然后，用下面这个命令push到sourceforge的git repository上去。
+
+$ git push --tags origin my-python-user-mode:python-user-mode
+
+注意，这里是从本地的my-python-user-mode分支push到sourceforge的python-user-mode的分支上。
+
+
+
+=====================
+3. 切换到 master 分支
+=====================
+
+在第一个步骤（克隆远程repository）的时候，针对sourceforge上的master分支，
+git在本地也创建了一个remote branch，即remotes/origin/master。
+
+同时，对应于该remotes/origin/master，git还在本地也创建了一个tracking branch，
+即master分支。这样，当我们要开发master分支的时候，我们只要切换就可以了：
+
+$ git checkout master
+
+这样，就可以更新master分支的代码了。
+
+...do works...
+
+工作完成后，先commit到本地repository，然后：
+
+$ git push --tags origin master:master
+
+来提交到sourceforge的repository。这里是把本地的master分支push到sourceforge的master分支。
+由于这两个分支都叫master，因此可以简化命令为：
+
+$ git push --tags origin master
+
+
+
+===============================
+4. 切换回 my-python-user-mode 分支
+===============================
+
+$ git checkout my-python-user-mode
+
+继续my-python-user-mode分支上的工作。
+
+
+=======================================
+5. 在sourceforge的repository中创建分支
+=======================================
+
+如果我们需要在sourceforge的repository中创建一个分支，比如，
+我们希望在本地的master分支的基础上，在远程创建一个dummy-branch分支，则
+
+$ git push origin master:refs/heads/dummy-branch
+
+此时，git在本地创建了一个remote branch，即remotes/origin/dummy-branch，
+来跟踪sourceforge上的dummy-branch分支。
+
+然后，保证一切都是最新的，
+
+$ git fetch origin
+
+OK，同样，我们不要在这个remote branch上直接进行开发，我们要在本地创建一个tracking branch，
+
+$ git checkout --track -b my-dummy-branch remotes/origin/dummy-branch
+
+这里的--track貌似是可以忽略的（正如前面的建立tracking branch的描述）。
+
+

@@ -1,0 +1,322 @@
+
+		drcom内核模块的设计与实现(v0.1)
+		===============================
+			  by wheelz
+
+
+本模块大量借鉴了Linux netfilter conntrack的代码。
+
+目录：
+
+一、为什么需要内核模块？
+二、drcom内核模块的原理
+三、drcom.ko的结构组成
+四、几个主要的数据结构
+五、TCP连接的状态变迁
+
+
+
+==============================================
+
+一、为什么需要内核模块？
+
+我们知道，正常的TCP连接是这样进行的：
+
+source    SYN ---------->    destination
+source    <------ SYN+ACK    destination
+source    ACK ---------->    destination
+
+三次握手完成以后，双方就可以开始传送数据了。
+此时，既有可能source端先发送数据，比如HTTP协议，
+如下所示：
+
+source    data --------->    destination
+source    <--------- data    destination
+
+
+也有可能destination端先发送数据，比如ftp、smtp等协议，
+如下所示：
+
+source    <--------- data    destination
+source    data --------->    destination
+
+
+
+如果drcom验证服务器需要TCP验证的话，所有TCP连接的数据来往，
+就有所变化了。
+
+source    SYN ---------->    destination
+source    <------ SYN+ACK    destination
+source    ACK ---------->    destination
+
+前面的三次握手还是一样的。
+
+握手完成以后，不管是source端先发数据，还是destination端先发数据，
+当source端第一次发送数据的时候，就必须首先发送一个16字节的验证信息。
+如下所示：
+
+[source 先发数据]
+source    [验证信息] --------->    destination
+source    data --------------->    destination
+source    <--------------- data    destination
+
+
+[destination 先发数据]
+source    <--------------- data    destination
+source    [验证信息] --------->    destination
+source    data --------------->    destination
+
+
+由于所有的TCP连接都需要进行这样的处理，而我们又不可能去修改每一个我们可能
+用到的程序，因此，唯一的办法就是在内核中做手脚。简单地说，就是在内核中
+监控每一个TCP连接，当source端第一次发送数据时，我们在前面插入16字节的验证信息。
+
+
+=======================================================
+
+二、drcom内核模块的原理
+
+在linux内核中，有几个netfilter hook，通过在这些hook上注册函数，我们就可以
+监控每一个来往的网络数据。
+
+在drcom内核模块中，利用的是PRE_ROUTING和POST_ROUTING两个hook。
+所有进入本机的数据，首先进入的hook，就是PRE_ROUTING。
+而所有离开本机的数据，最后通过的hook，就是POST_ROUTING。
+
+另一方面，我们知道，TCP连接的每一个数据，包括SYN，都是有序号的，
+由于我们需要在source端发出第一个数据包时，插入这个16字节的验证信息，
+因此我们需要知道这个第一个数据包的序号。事实上，这可以从SYN包的序号
+来推断得到。而每个TCP连接的SYN包的序号是不同的。
+为此，我们需要跟踪每个TCP连接，记录每个TCP连接的SYN包的序号等信息。
+
+这也就是说，我们需要为每个TCP连接维持一个状态。对于每个来往的数据包，
+我们首先要在维护的TCP状态表中，查找它是属于哪个TCP连接的，然后将它和
+该TCP连接的SYN包序号进行比对，如果发现它是source发出的第一个数据包，
+我们就插入16字节的验证信息。
+
+由于这个插入的16字节验证信息也是占用了序号的，因此，该TCP连接
+source->dest方向的后续所有数据的序号都要向后偏移16字节。
+为此，在发送完这16字节验证信息后，我们需要把此后本机发送的
+所有数据的序号都增加16，再发送出去。而所有后续收到的数据的序号
+都减去16，再提交给本机继续处理。
+
+同时，dest发回的ack序号，也需要做相应的处理。
+
+这也就是drcom内核模块需要作的工作。
+
+
+===============================================================
+
+三、drcom.ko的结构组成
+
+大致上，drcom.ko包括3部分，
+
+3.1) 用户态程序和内核模块的接口
+
+    这个接口是通过setsockopt()来实现的。
+    代码在conn_set_sockopt()，以及依次调用的conn_set_params()和conn_set_auth_cmd()。
+    其中conn_set_params()主要用来设置内网地址和掩码。
+    conn_set_auth_cmd()用来将登录过程中得到的16字节验证信息传递给内核，
+       同时开启内核为每个TCP连接插入验证数据的功能。
+
+3.2) 初始化函数init()和卸载函数fini()
+
+    主要的功能就是注册我们自己的setsockopt()功能。
+
+3.3) TCP连接跟踪功能（插入验证信息，并维持TCP连接的状态）
+
+    这是本模块的主要部分。
+    用户态程序调用setsockopt()来开启验证功能后，conn_set_auth_cmd()会调用conn_hooks_init()，
+    注册PRE_ROUTING和POST_ROUTING hook函数，即preroute_hook()和postroute_hook()，以此来监控
+    每一个来往的数据包。
+
+    对于postroute_hook()，顺序调用以下函数：
+	need_auth_output(): 该数据包是内网数据还是外网数据？只有外网数据才需要处理。
+	is_udp_packet(): 
+		conn_do_udp(): UDP数据没有序号的问题，对于发送的UDP数据来说，
+			       简单加上16字节验证信息即可。
+	resolve_tcp_conn():对于TCP数据，查找该包对应的TCP状态，如果是新的连接，则创建新的TCP状态。
+	check_tcp_packet():根据找到的TCP状态，检查这个数据包，看是否是source发的第一个数据包，
+                           并由此决定需要做的工作。
+	1）TODO_SEND_ACK: 如果source将三次握手的最后一个ACK包和数据一起发送，
+			  因此，我们要调用build_ack_skb()来构造一个纯ACK包，并调用okfn()发送出去。
+			  （通常，返回TODO_SEND_ACK的同时也会返回TODO_SEND_AUTH，来发送16字节验证信息）
+	2）TODO_SEND_AUTH:这是source端的第一个数据包，需要发送16字节验证信息。
+			  调用build_auth_skb()，并调用okfn()发送出去。
+	3）TODO_ADJUST_SEQ:这是16字节验证信息后的数据，都需要调整序号。调用tcp_adjust_seq()
+
+    preroute_hook()和postroute_hook()类似，但是由于监控的是接收的数据，
+    因此没有发送验证信息的任务，UDP数据无须任何处理，TCP数据只需要根据TCP状态，调整序号。
+
+
+==========================================================================
+
+四、几个主要的数据结构
+
+4.1) struct tcp_tuple{}
+
+struct tcp_tuple
+{
+        __be32  src_ip;
+        __be32  dst_ip;
+
+        __be16  src_port;
+        __be16  dst_port;
+
+        u_int8_t dir;
+};
+
+tcp_tuple{}是用来标识每个TCP连接的关键字，包含源ip地址和源端口，以及目的ip地址和目的端口。
+同时，dir表示数据的方向，连接发起方发送的数据是CONN_DIR_ORIG，连接接受方发送的数据是CONN_DIR_REPLY。
+注意，每个TCP连接有两个方向，这两个方向分别有一个tcp_tuple{}，他们的src_ip/src_port/dst_ip/dst_port
+关系是相反的。
+
+
+4.2) struct tcp_tuplehash{}
+
+struct tcp_tuplehash
+{
+        struct list_head        list;
+        struct tcp_tuple        tuple;
+};
+
+我们把所有的TCP连接的关键字链接到链表中，这里tcp_tuplehash{}就是链接到链表中的数据结构。
+
+
+4.3) struct tcp_seq{}
+
+struct tcp_seq
+{
+        u_int32_t       syn_seq;
+        u_int32_t       correction_pos;
+        int16_t         offset_before, offset_after;
+};
+
+该结构记录每个TCP连接的SYN包的序号，以及哪些序号的数据需要进行处理。
+由于每个TCP连接都有两个数据方向，因此每个TCP连接都有2份该数据结构。
+这里，
+syn_seq：表示该方向SYN包的序号，
+correction_pos：表示需要校正的序号点，在drcom中，就是syn_seq
+offset_before：如果监控的数据包的序号在correction_pos的前面，则需要加上offset_before偏移量。
+offset_after：如果监控的数据包的序号在correction_pos的后面，则需要加上offset_after偏移量。
+
+
+4.4) struct tcp_conn{}
+
+struct tcp_conn
+{
+        struct tcp_tuplehash    tuplehash[2];
+
+        atomic_t                ref;
+
+        struct timer_list       timeout;
+
+        u_int8_t                flags;
+        enum tcp_state          state;
+        struct tcp_seq          seq[2];
+};
+
+这是记录每个TCP连接的状态的数据结构。
+tuplehash[2]：分别把该连接的两个方向的关键字链接到TCP连接表中。
+ref：是一个计数，等于0，则可以删除该TCP连接。
+timeout：是一个计时器，每个TCP连接根据不同的状态，都有一个timeout值，
+       当在该timeout时间内，没有数据往来的话，则可以删除该TCP连接。
+flags：一些标志。
+state：该TCP连接的当前状态。
+seq[2]：该TCP连接两个方向的序号信息。
+
+
+===========================================================================
+
+五、TCP连接的状态变迁
+
+对于每个TCP连接来说，不同的时间会处在不同的状态，这些状态有：
+
+enum tcp_state {
+        TCP_STATE_NONE = 0,
+        TCP_STATE_SYN_SENT,
+        TCP_STATE_SYN_RECV,
+        TCP_STATE_ESTABLISHED,
+        TCP_STATE_FIN_WAIT,
+        TCP_STATE_TIME_WAIT,
+        TCP_STATE_CLOSE,
+        TCP_STATE_CLOSE_WAIT,
+        TCP_STATE_LAST_ACK,
+        TCP_STATE_LISTEN,
+        TCP_STATE_MAX
+};
+
+而不同的状态，会有不同的timeout值，也就是说，在不同的状态，如果该连接没有数据往来，
+我们需要等待不同的时间，才能删除该连接。
+
+static unsigned long tcp_timeouts[]
+= { 30 MINS,    /*      TCP_STATE_NONE, */
+    2 MINS,     /*      TCP_STATE_SYN_SENT,     */
+    60 SECS,    /*      TCP_STATE_SYN_RECV,     */
+    5 DAYS,     /*      TCP_STATE_ESTABLISHED,  */
+    2 MINS,     /*      TCP_STATE_FIN_WAIT,     */
+    2 MINS,     /*      TCP_STATE_TIME_WAIT,    */
+    10 SECS,    /*      TCP_STATE_CLOSE,        */
+    60 SECS,    /*      TCP_STATE_CLOSE_WAIT,   */
+    30 SECS,    /*      TCP_STATE_LAST_ACK,     */
+    2 MINS,     /*      TCP_STATE_LISTEN,       */
+};
+
+
+同时，我们会根据监控到的数据包，以及当前TCP的状态，更新该TCP连接的状态。
+
+比如，一个新的TCP连接，其当前状态是TCP_STATE_NONE，
+当在CONN_DIR_ORIG方向上监控到SYN包时，该TCP连接的状态将进入TCP_STATE_SYN_SENT，
+而后，在CONN_DIR_REPLY方向上监控到SYN包后，该TCP连接将进入TCP_STATE_SYN_RECV状态，
+再后，在CONN_DIR_ORIG方向上监控到ACK包的话，该TCP连接将进入TCP_STATE_ESTABLISHED状态。
+
+又比如，一个TCP连接当前状态是TCP_STATE_ESTABLISHED，如果此时在CONN_DIR_ORIG或者在
+CONN_DIR_REPLY方向上监控到RST包，则该TCP连接将进入TCP_STATE_CLOSE状态。
+
+完整的状态变迁表如下：
+
+#define sNO TCP_STATE_NONE
+#define sES TCP_STATE_ESTABLISHED
+#define sSS TCP_STATE_SYN_SENT
+#define sSR TCP_STATE_SYN_RECV
+#define sFW TCP_STATE_FIN_WAIT
+#define sTW TCP_STATE_TIME_WAIT
+#define sCL TCP_STATE_CLOSE
+#define sCW TCP_STATE_CLOSE_WAIT
+#define sLA TCP_STATE_LAST_ACK
+#define sLI TCP_STATE_LISTEN
+#define sIV TCP_STATE_MAX
+
+static enum tcp_state tcp_states[2][5][TCP_STATE_MAX] = {
+        {
+/*      ORIGINAL */
+/*      sNO, sSS, sSR, sES, sFW, sTW, sCL, sCW, sLA, sLI      */
+/*syn*/ {sSS, sSS, sSR, sES, sSS, sSS, sSS, sSS, sSS, sLI },
+/*fin*/ {sTW, sSS, sTW, sFW, sFW, sTW, sCL, sTW, sLA, sLI },
+/*ack*/ {sES, sSS, sES, sES, sFW, sTW, sCL, sCW, sLA, sES },
+/*rst*/ {sCL, sSS, sCL, sCL, sCL, sTW, sCL, sCL, sCL, sCL },
+/*none*/{sIV, sIV, sIV, sIV, sIV, sIV, sIV, sIV, sIV, sIV }
+        },
+        {
+/*      REPLY */
+/*      sNO, sSS, sSR, sES, sFW, sTW, sCL, sCW, sLA, sLI      */
+/*syn*/ {sSR, sSR, sSR, sES, sSR, sSR, sSR, sSR, sSR, sSR },
+/*fin*/ {sCL, sSS, sTW, sCW, sTW, sTW, sCL, sCW, sLA, sLI },
+/*ack*/ {sCL, sSS, sSR, sES, sFW, sTW, sCL, sCW, sCL, sLI },
+/*rst*/ {sCL, sCL, sCL, sCL, sCL, sCL, sCL, sCL, sLA, sLI },
+/*none*/{sIV, sIV, sIV, sIV, sIV, sIV, sIV, sIV, sIV, sIV }
+        }
+};
+
+
+也许大家注意到了，这个状态变迁表和标准的TCP状态变迁表是不一样的，
+这是因为我们是处在两个通信者中间，并不是两个通信者本人，而网络是有可能丢包的，
+因此一些状态是冗余的。
+
+
+处理状态变迁的函数是check_tcp_packet()，同时，该函数还根据TCP连接的状态，
+记录SYN包的序号等信息，并判断当前需要进行的动作，比如TODO_SEND_AUTH等等。
+
+
+--END
+
